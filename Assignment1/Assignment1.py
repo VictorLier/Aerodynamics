@@ -56,11 +56,12 @@ for i, (s1_set, s2_set) in enumerate(zip([sym_s1, asym_s1], [sym_s2, asym_s2])):
     for s1, s2 in zip(s1_set, s2_set):
         z_a = np.array([R(t,s1,s2) for t in theta])*np.exp(1j*theta) 
         l = np.real( zeta(z_a)[0] - zeta(z_a)[n_points//2])
-        plt.plot(np.real(zeta(z_a))/l - np.real(zeta(z_a)[n_points//2])/l, np.imag(zeta(z_a))/l, label=f"s1/c = {round(s1,3)}, s2/c = {round(s2,3)}")
+        #plt.plot(np.real(zeta(z_a))/l - np.real(zeta(z_a)[n_points//2])/l, np.imag(zeta(z_a))/l, label=f"s1/c = {round(s1,3)}, s2/c = {round(s2,3)}")
 
         h_x = np.array( [np.real(zeta(z_a)[i]) for i in range(n_points//2)])
         h_y = np.array( [np.imag(zeta(z_a)[i] + zeta(z_a)[n_points-1-i])/2 for i in range(n_points//2)])
 
+    
     plt.plot(h_x/l-np.real(zeta(z_a)[n_points//2])/l, h_y/l, '--', color='black')
     plt.axis('equal')
     plt.xlabel('x/l')
@@ -70,6 +71,9 @@ for i, (s1_set, s2_set) in enumerate(zip([sym_s1, asym_s1], [sym_s2, asym_s2])):
     plt.legend()
     plt.show()
 
+    # Print the camber
+    x_cord = h_x/l-np.real(zeta(z_a)[n_points//2])/l
+    y_cord = h_y/l
 
 
 def print_camber(transformation, z_arr):
@@ -77,3 +81,6 @@ def print_camber(transformation, z_arr):
     h_y = np.array( [np.imag(transformation(z_arr)[i] + transformation(z_arr)[n_points-1-i])/2 for i in range(n_points//2)])
     print(h_x/l-np.real(transformation(z_arr)[n_points//2])/l)
     print(h_y/l)
+    plt.figure()
+    plt.plot(h_x/l-np.real(transformation(z_arr)[n_points//2])/l, h_y/l)
+    plt.show()
