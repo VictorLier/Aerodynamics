@@ -20,7 +20,7 @@ def Cdi(Cl, AR, alpha):
 
 AR = np.array([4, 6, 8, 10, 100000])
 
-alpha = np.linspace(-6, 10, 20)
+alpha = np.linspace(-6*np.pi/180, 10*np.pi/180, 20)
 
 plt.figure()
 for i in range(len(AR)):
@@ -41,5 +41,3 @@ plt.legend()
 plt.show()
 
 
-
-def

@@ -33,13 +33,13 @@ input_file.close()
 
 subprocess.call("xfoil.exe < input_file.in", shell=True)
 
-polar_data = np.loadtxt("polar_file.txt", skiprows=12)
+polar_data = np.loadtxt("Assignment2\Run_xfoil_from_python_NACA\CL\polar_file.txt", skiprows=12)
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 # Read data from the text file
-file_path = 'polar_file.txt'  # Update with the actual path to your text file
+file_path = 'Assignment2\Run_xfoil_from_python_NACA\CL\polar_file.txt'  # Update with the actual path to your text file
 data = np.genfromtxt(file_path, skip_header=11)  # Skip the first 4 lines which contain headers
 
 # Extract alpha and CL data
