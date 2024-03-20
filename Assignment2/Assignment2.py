@@ -12,7 +12,7 @@ def solve_fourier_coefs(nA: int, m0: np.ndarray, b: float, c: np.ndarray, alpha_
     alpha: 1D array of angle of attack
     theta: 1D array of theta values
     '''
-    # Initialize ordinate vector - b
+    # Initialize ordinate vector - o
     o = (alpha_L0 - alpha)
 
     # Initialize coefficient matrix - B
@@ -103,54 +103,74 @@ class EllipticAirfoil():
             ai_sum =+ (i+1) * self.A[i,:]
         return ai_sum, self.AOA*180/np.pi
 
+class ConstantAirfoil(EllipticAirfoil):
+    def __init__(self, airfoil_name: str, Re: float, nA: int, AR: int, AOA: np.ndarray):
+        super().__init__(airfoil_name, Re, nA, AR)
+        self.c = 1
+        self.AOA = AOA
+    def ai(self) -> np.ndarray:
+        '''
+        Calculate the induced angle of attacks at each theta
+        return: Induced angle of attack, Angle of attack in degrees
+        '''
+        ai = np.zeros((len(self.AOA), self.nA))
+        for i, AOA in enumerate(self.AOA):
+            for n, j in range(self.nA):
+                ai_sum =+ (n+1)*self.A[j,:] * np.sin((j+1)*self.theta[j]) / np.sin(self.theta[j])
+        
+        return ai, self.AOA*180/np.pi
 
 if __name__ == "__main__":
 
-    eliptic4 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=4, AOA_int=100)
-    eliptic6 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=6, AOA_int=100)
-    eliptic8 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=8, AOA_int=100)
-    eliptic10 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10, AOA_int=100)
-    elipticinf = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10000, AOA_int=100)
+    if True: # Task 1
+        eliptic4 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=4, AOA_int=100)
+        eliptic6 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=6, AOA_int=100)
+        eliptic8 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=8, AOA_int=100)
+        eliptic10 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10, AOA_int=100)
+        elipticinf = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10000, AOA_int=100)
 
-    plt.figure()
-    plt.plot(eliptic4.general_Cl()[1], eliptic4.general_Cl()[0])
-    plt.plot(eliptic6.general_Cl()[1], eliptic6.general_Cl()[0])
-    plt.plot(eliptic8.general_Cl()[1], eliptic8.general_Cl()[0])
-    plt.plot(eliptic10.general_Cl()[1], eliptic10.general_Cl()[0])
-    plt.plot(elipticinf.general_Cl()[1], elipticinf.general_Cl()[0])
-    
-    plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
-    plt.xlabel("Angle of attack (degrees)")
-    plt.ylabel("Lift coefficient")
-    plt.title("Lift coefficient vs. Angle of attack for different aspect ratios")
-    plt.grid(True)
-    plt.show()
+        plt.figure()
+        plt.plot(eliptic4.general_Cl()[1], eliptic4.general_Cl()[0])
+        plt.plot(eliptic6.general_Cl()[1], eliptic6.general_Cl()[0])
+        plt.plot(eliptic8.general_Cl()[1], eliptic8.general_Cl()[0])
+        plt.plot(eliptic10.general_Cl()[1], eliptic10.general_Cl()[0])
+        plt.plot(elipticinf.general_Cl()[1], elipticinf.general_Cl()[0])
+        
+        plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+        plt.xlabel("Angle of attack (degrees)")
+        plt.ylabel("Lift coefficient")
+        plt.title("Lift coefficient vs. Angle of attack for different aspect ratios")
+        plt.grid(True)
+        plt.show()
 
-    plt.figure()
-    plt.plot(eliptic4.general_Cdi()[1], eliptic4.general_Cdi()[0])
-    plt.plot(eliptic6.general_Cdi()[1], eliptic6.general_Cdi()[0])
-    plt.plot(eliptic8.general_Cdi()[1], eliptic8.general_Cdi()[0])
-    plt.plot(eliptic10.general_Cdi()[1], eliptic10.general_Cdi()[0])
-    plt.plot(elipticinf.general_Cdi()[1], elipticinf.general_Cdi()[0])
-    plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
-    plt.xlabel("Angle of attack (degrees)")
-    plt.ylabel("Induced drag coefficient")
-    plt.title("Induced drag coefficient vs. Angle of attack for different aspect ratios")
-    plt.grid(True)
-    plt.show()
+        plt.figure()
+        plt.plot(eliptic4.general_Cdi()[1], eliptic4.general_Cdi()[0])
+        plt.plot(eliptic6.general_Cdi()[1], eliptic6.general_Cdi()[0])
+        plt.plot(eliptic8.general_Cdi()[1], eliptic8.general_Cdi()[0])
+        plt.plot(eliptic10.general_Cdi()[1], eliptic10.general_Cdi()[0])
+        plt.plot(elipticinf.general_Cdi()[1], elipticinf.general_Cdi()[0])
+        plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+        plt.xlabel("Angle of attack (degrees)")
+        plt.ylabel("Induced drag coefficient")
+        plt.title("Induced drag coefficient vs. Angle of attack for different aspect ratios")
+        plt.grid(True)
+        plt.show()
 
-    plt.figure()
-    plt.plot(eliptic4.ai()[1], eliptic4.ai()[0])
-    plt.plot(eliptic6.ai()[1], eliptic6.ai()[0])
-    plt.plot(eliptic8.ai()[1], eliptic8.ai()[0])
-    plt.plot(eliptic10.ai()[1], eliptic10.ai()[0])
-    plt.plot(elipticinf.ai()[1], elipticinf.ai()[0])
-    plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
-    plt.xlabel("Angle of attack (degrees)")
-    plt.ylabel("Induced angle of attack")
-    plt.title("Induced angle of attack vs. Angle of attack for different aspect ratios")
-    plt.grid(True)
-    plt.show()
-    
+        plt.figure()
+        plt.plot(eliptic4.ai()[1], eliptic4.ai()[0])
+        plt.plot(eliptic6.ai()[1], eliptic6.ai()[0])
+        plt.plot(eliptic8.ai()[1], eliptic8.ai()[0])
+        plt.plot(eliptic10.ai()[1], eliptic10.ai()[0])
+        plt.plot(elipticinf.ai()[1], elipticinf.ai()[0])
+        plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+        plt.xlabel("Angle of attack (degrees)")
+        plt.ylabel("Induced angle of attack")
+        plt.title("Induced angle of attack vs. Angle of attack for different aspect ratios")
+        plt.grid(True)
+        plt.show()
+
+    if False: # Task 2    
+        AOA_array = np.array([0, 5*np.pi/180, 10*np.pi/180])
+        constant4 = ConstantAirfoil("NACA4415", Re=1e6, nA=10, AR=4, AOA=AOA_array)
 
     print("Stop")
