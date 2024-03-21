@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+import subprocess
 
-def solve_fourier_coefs(nA: int, m0: np.ndarray, b: float, c: np.ndarray, alpha_L0: np.ndarray, alpha: np.ndarray, theta_array: np.ndarray) -> np.ndarray:
+def solve_fourier_coefs(nA: int, m0: float, b: float, c: np.ndarray, alpha_L0: np.ndarray, alpha: np.ndarray, theta_array: np.ndarray) -> np.ndarray:
     '''
     Calculates the Fourier coefficients for a given airfoil at a specific angle of attack
     nA: Number of Fourier coefficients
@@ -13,7 +15,7 @@ def solve_fourier_coefs(nA: int, m0: np.ndarray, b: float, c: np.ndarray, alpha_
     theta: 1D array of theta values
     '''
     # Initialize ordinate vector - o
-    o = (alpha_L0 - alpha)
+    o = np.full(nA, (alpha_L0 - alpha))
 
     # Initialize coefficient matrix - B
     B = np.zeros((nA, nA))
@@ -21,36 +23,92 @@ def solve_fourier_coefs(nA: int, m0: np.ndarray, b: float, c: np.ndarray, alpha_
     # Fill in B matrix
     for j, theta in enumerate(theta_array):
         for i in range(nA):
-            B[i, j] = (-4*b/(m0[j]*c[j]) * np.sin(((1+i))*theta) - (np.sin(((1+i))*theta)/np.sin(theta)))
+            B[i, j] = (-4*b/(m0*c[j]) * np.sin(((1+i))*theta) - (np.sin(((1+i))*theta)/np.sin(theta))) # Silde 26 week 8
 
     # Solve for A
     A = np.linalg.solve(B, o)
 
     return A
 
+def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step: float, Re: float):
+    '''
+    Run xfoil and get data for a given airfoil
+    Input: airfoil_name, AOA_start [degrees], AOA_end [degrees], AOA_step [degrees], Re
+    Output: alpha [radians], alpha0 [radians], m0 (slope), cd_friction
+    '''
+    # File name
+    polar_file_path = f"Assignment2\{airfoil_name}_{AOA_start}_{AOA_end}_{AOA_step}_{Re}.txt"
+
+
+
+    # Check if polar file already exists
+    if os.path.exists(polar_file_path):
+        data = np.loadtxt(polar_file_path, skiprows=12)
+        alpha = data[:, 0] * np.pi/180
+        cl = data[:, 1]
+        cd = data[:, 2]
+        cdp = data[:, 3]
+
+        # calculate slope and intercept of lift curve
+        m0, cl0 = np.polyfit(alpha, cl, 1) # Assumes linear lift curve slope
+        alpha0 = -cl0/m0 # Zero lift angle of attack in degrees
+        cd_friction = cd # Friction drag coefficient
+
+        return alpha, alpha0, m0, cd_friction
+    
+    # Create input file
+    input_file = open("Assignment2\input.in", 'w')
+    input_file.write(f"{airfoil_name}\n")
+    input_file.write("PANE\n")
+    input_file.write("OPER\n")
+    input_file.write(f"Visc {Re}\n")
+    input_file.write("PACC\n")
+    input_file.write(f"{polar_file_path}\n\n")
+    input_file.write("ITER 100\n")
+    input_file.write("ASeq {0} {1} {2}\n".format(AOA_start, AOA_end, AOA_step))
+    input_file.write("\n\n")
+    input_file.write("quit\n")
+    input_file.close()
+
+    # Run xfoil
+    subprocess.call("Assignment2\\xfoil.exe < Assignment2\\input.in", shell=True)
+
+    # Read data from polar file
+    data = np.loadtxt(polar_file_path, skiprows=12)
+    alpha = data[:, 0] * np.pi/180
+    cl = data[:, 1]
+    cd = data[:, 2]
+    cdp = data[:, 3]
+
+    # calculate slope and intercept of lift curve
+    m0, cl0 = np.polyfit(alpha, cl, 1) # Assumes linear lift curve slope
+    alpha0 = -cl0/m0 # Zero lift angle of attack in degrees
+    cd_friction = cd # Friction drag coefficient
+
+    return alpha, alpha0, m0, cd_friction
+
+
 class EllipticAirfoil():
-    def __init__(self, airfoil_name: str, Re: float, nA: int, AR: int, AOA_int: int):
+    def __init__(self, airfoil_name: str, Re: float, nA: int, AR: int, AOA_start: float, AOA_end: float, AOA_step: float):
         '''
         airfoil_name: Airfoil section name eg. NACA4415
         Re: Reynolds number
         nA: Number of Fourier coefficients/theta values
         AR: Aspect ratio
-        AOA_int: number of angle of attacks
+        AOA_start: Start angle of attack [degrees]
+        AOA_end: End angle of attack [degrees]
+        AOA_step: Angle of attack step [degrees]
         '''
         self.airfoil_name = airfoil_name
         self.Re = Re
         self.nA = nA
         self.AR = AR
-        self.AOA_int = AOA_int
+        self.AOA_start = AOA_start
+        self.AOA_end = AOA_end
+        self.AOA_step = AOA_step
 
-        # Zero lift angle of attack from xfoil - Should probably be automated
-        self.alpha0 =  np.full(nA, -4.25*np.pi/180)
-
-        # Slope of lift curve from xfoil - Should probably be automated
-        self.m0 = np.full(nA, 2*np.pi)
-
-        # List of angles of attack
-        self.AOA = np.linspace(-6*np.pi/180, 10*np.pi/180, self.AOA_int)
+        # Get xfoil data - list of angles [radians], zero lift angle of attack [radians], slope of lift curve, friction drag coefficient
+        self.AOA, self.alpha0, self.m0, self.cd_friction = get_xfoil_data(self.airfoil_name, self.AOA_start, self.AOA_end, self.AOA_step, self.Re)
 
         # List of theta values
         dpi = np.pi/self.nA
@@ -123,11 +181,11 @@ class ConstantAirfoil(EllipticAirfoil):
 if __name__ == "__main__":
 
     if True: # Task 1
-        eliptic4 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=4, AOA_int=100)
-        eliptic6 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=6, AOA_int=100)
-        eliptic8 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=8, AOA_int=100)
-        eliptic10 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10, AOA_int=100)
-        elipticinf = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10000, AOA_int=100)
+        eliptic4 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=4, AOA_start=-6, AOA_end=10, AOA_step=1)
+        eliptic6 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=6, AOA_start=-6, AOA_end=10, AOA_step=1)
+        eliptic8 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=8, AOA_start=-6, AOA_end=10, AOA_step=1)
+        eliptic10 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10, AOA_start=-6, AOA_end=10, AOA_step=1)
+        elipticinf = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10000, AOA_start=-6, AOA_end=10, AOA_step=1)
 
         plt.figure()
         plt.plot(eliptic4.general_Cl()[1], eliptic4.general_Cl()[0])
@@ -172,5 +230,10 @@ if __name__ == "__main__":
     if False: # Task 2    
         AOA_array = np.array([0, 5*np.pi/180, 10*np.pi/180])
         constant4 = ConstantAirfoil("NACA4415", Re=1e6, nA=10, AR=4, AOA=AOA_array)
+
+    if False: # test
+        alpha, alpha0, m0, cd_friction = get_xfoil_data("NACA4415", -6, 10, 0.5, 6e6)
+        
+
 
     print("Stop")
