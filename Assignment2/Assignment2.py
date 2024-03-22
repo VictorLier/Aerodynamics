@@ -318,10 +318,7 @@ if __name__ == "__main__":
 
             plt.show()
 
-
-    if True # Task 3
-        if False: # Part A
-            # Do something
+        
 
     if False: # test
         alpha, alpha0, m0, cd_friction = get_xfoil_data("NACA4415", -6, 10, 0.5, 6e6)
