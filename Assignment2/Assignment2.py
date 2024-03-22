@@ -163,8 +163,8 @@ class EllipticAirfoil():
 
 class ConstantAirfoil(EllipticAirfoil):
     def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 10, AOA_start = -6, AOA_end = 10, AOA_step = 0.5):
-        super().__init__(AR, airfoil_name, Re, nA, AOA_start, AOA_end, AOA_step)
         self.c = 1
+        super().__init__(AR, airfoil_name, Re, nA, AOA_start, AOA_end, AOA_step)
     def ai(self) -> np.ndarray:
         '''
         Calculate the induced angle of attacks at each theta
@@ -239,7 +239,7 @@ if __name__ == "__main__":
 
 
     if True: # Task 2
-        if False: # Part A
+        if True: # Part A
             constant4 = ConstantAirfoil(AR = 4, AOA_start=0, AOA_end=10, AOA_step=5)
             constant6 = ConstantAirfoil(AR = 6, AOA_start=0, AOA_end=10, AOA_step=5)
             constant8 = ConstantAirfoil(AR = 8, AOA_start=0, AOA_end=10, AOA_step=5)
@@ -283,7 +283,7 @@ if __name__ == "__main__":
             plt.grid(True)
             plt.show()
 
-        if True: # Part B
+        if False: # Part B
             constant4 = ConstantAirfoil(AR = 4, AOA_start=-4)
             constant6 = ConstantAirfoil(AR = 6, AOA_start=-4)
             constant8 = ConstantAirfoil(AR = 8, AOA_start=-4)
