@@ -30,6 +30,7 @@ def solve_fourier_coefs(nA: int, m0: float, b: float, c: np.ndarray, alpha_L0: n
 
     return A
 
+
 def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step: float, Re: float):
     '''
     Run xfoil and get data for a given airfoil
@@ -87,9 +88,8 @@ def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step
 
     return alpha, alpha0, m0, cd_friction
 
-
 class EllipticAirfoil():
-    def __init__(self, airfoil_name: str, Re: float, nA: int, AR: int, AOA_start: float, AOA_end: float, AOA_step: float):
+    def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 10, AOA_start = -6, AOA_end = 10, AOA_step = 0.5):
         '''
         airfoil_name: Airfoil section name eg. NACA4415
         Re: Reynolds number
@@ -162,10 +162,9 @@ class EllipticAirfoil():
         return ai_sum, self.AOA*180/np.pi
 
 class ConstantAirfoil(EllipticAirfoil):
-    def __init__(self, airfoil_name: str, Re: float, nA: int, AR: int, AOA: np.ndarray):
-        super().__init__(airfoil_name, Re, nA, AR)
+    def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 10, AOA_start = -6, AOA_end = 10, AOA_step = 0.5):
+        super().__init__(AR, airfoil_name, Re, nA, AOA_start, AOA_end, AOA_step)
         self.c = 1
-        self.AOA = AOA
     def ai(self) -> np.ndarray:
         '''
         Calculate the induced angle of attacks at each theta
@@ -173,19 +172,20 @@ class ConstantAirfoil(EllipticAirfoil):
         '''
         ai = np.zeros((len(self.AOA), self.nA))
         for i, AOA in enumerate(self.AOA):
-            for n, j in range(self.nA):
-                ai_sum =+ (n+1)*self.A[j,:] * np.sin((j+1)*self.theta[j]) / np.sin(self.theta[j])
-        
+            for j, theta in enumerate(self.theta):
+                for n in range(self.nA):
+                    ai_sum =+ (n+1)*self.A[n,i] * np.sin((n+1)*theta) / np.sin(theta) # slide 26 week 8
+                ai[i, j] = ai_sum
         return ai, self.AOA*180/np.pi
 
 if __name__ == "__main__":
 
-    if True: # Task 1
-        eliptic4 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=4, AOA_start=-6, AOA_end=10, AOA_step=1)
-        eliptic6 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=6, AOA_start=-6, AOA_end=10, AOA_step=1)
-        eliptic8 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=8, AOA_start=-6, AOA_end=10, AOA_step=1)
-        eliptic10 = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10, AOA_start=-6, AOA_end=10, AOA_step=1)
-        elipticinf = EllipticAirfoil("NACA4415", Re=1e6, nA=10, AR=10000, AOA_start=-6, AOA_end=10, AOA_step=1)
+    if False: # Task 1
+        eliptic4 = EllipticAirfoil(AR = 4)
+        eliptic6 = EllipticAirfoil(AR = 6)
+        eliptic8 = EllipticAirfoil(AR = 8)
+        eliptic10 = EllipticAirfoil(AR = 10)
+        elipticinf = EllipticAirfoil(AR = 10000)
 
         plt.figure()
         plt.plot(eliptic4.general_Cl()[1], eliptic4.general_Cl()[0])
@@ -199,7 +199,6 @@ if __name__ == "__main__":
         plt.ylabel("Lift coefficient")
         plt.title("Lift coefficient vs. Angle of attack for different aspect ratios")
         plt.grid(True)
-        plt.show()
 
         plt.figure()
         plt.plot(eliptic4.general_Cdi()[1], eliptic4.general_Cdi()[0])
@@ -212,7 +211,6 @@ if __name__ == "__main__":
         plt.ylabel("Induced drag coefficient")
         plt.title("Induced drag coefficient vs. Angle of attack for different aspect ratios")
         plt.grid(True)
-        plt.show()
 
         plt.figure()
         plt.plot(eliptic4.ai()[1], eliptic4.ai()[0])
@@ -225,11 +223,105 @@ if __name__ == "__main__":
         plt.ylabel("Induced angle of attack")
         plt.title("Induced angle of attack vs. Angle of attack for different aspect ratios")
         plt.grid(True)
+
+        plt.figure()
+        plt.plot(eliptic4.AOA*180/np.pi, eliptic4.cd_friction)
+        plt.plot(eliptic6.AOA*180/np.pi, eliptic6.cd_friction)
+        plt.plot(eliptic8.AOA*180/np.pi, eliptic8.cd_friction)
+        plt.plot(eliptic10.AOA*180/np.pi, eliptic10.cd_friction)
+        plt.plot(elipticinf.AOA*180/np.pi, elipticinf.cd_friction)
+        plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+        plt.xlabel("Angle of attack (degrees)")
+        plt.ylabel("Friction drag coefficient")
+        plt.title("Friction drag coefficient vs. Angle of attack for different aspect ratios")
+        plt.grid(True)
         plt.show()
 
-    if False: # Task 2    
-        AOA_array = np.array([0, 5*np.pi/180, 10*np.pi/180])
-        constant4 = ConstantAirfoil("NACA4415", Re=1e6, nA=10, AR=4, AOA=AOA_array)
+
+    if True: # Task 2
+        if False: # Part A
+            constant4 = ConstantAirfoil(AR = 4, AOA_start=0, AOA_end=10, AOA_step=5)
+            constant6 = ConstantAirfoil(AR = 6, AOA_start=0, AOA_end=10, AOA_step=5)
+            constant8 = ConstantAirfoil(AR = 8, AOA_start=0, AOA_end=10, AOA_step=5)
+            constant10 = ConstantAirfoil(AR = 10, AOA_start=0, AOA_end=10, AOA_step=5)
+            constantinf = ConstantAirfoil(AR = 10000, AOA_start=0, AOA_end=10, AOA_step=5)
+
+            plt.figure()
+            plt.plot(constant4.theta, constant4.ai()[0][0]*180/np.pi)
+            plt.plot(constant6.theta, constant6.ai()[0][0]*180/np.pi)
+            plt.plot(constant8.theta, constant8.ai()[0][0]*180/np.pi)
+            plt.plot(constant10.theta, constant10.ai()[0][0]*180/np.pi)
+            plt.plot(constantinf.theta, constantinf.ai()[0][0]*180/np.pi)
+            plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+            plt.xlabel("Theta")
+            plt.ylabel("Induced angle of attack")
+            plt.title("Induced angle of attack vs. Theta for different aspect ratios and angle of attack = 0 degrees")
+            plt.grid(True)
+
+            plt.figure()
+            plt.plot(constant4.theta, constant4.ai()[0][1]*180/np.pi)
+            plt.plot(constant6.theta, constant6.ai()[0][1]*180/np.pi)
+            plt.plot(constant8.theta, constant8.ai()[0][1]*180/np.pi)
+            plt.plot(constant10.theta, constant10.ai()[0][1]*180/np.pi)
+            plt.plot(constantinf.theta, constantinf.ai()[0][1]*180/np.pi)
+            plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+            plt.xlabel("Theta")
+            plt.ylabel("Induced angle of attack")
+            plt.title("Induced angle of attack vs. Theta for different aspect ratios and angle of attack = 5 degrees")
+            plt.grid(True)
+
+            plt.figure()
+            plt.plot(constant4.theta, constant4.ai()[0][2]*180/np.pi)
+            plt.plot(constant6.theta, constant6.ai()[0][2]*180/np.pi)
+            plt.plot(constant8.theta, constant8.ai()[0][2]*180/np.pi)
+            plt.plot(constant10.theta, constant10.ai()[0][2]*180/np.pi)
+            plt.plot(constantinf.theta, constantinf.ai()[0][2]*180/np.pi)
+            plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+            plt.xlabel("Theta")
+            plt.ylabel("Induced angle of attack")
+            plt.title("Induced angle of attack vs. Theta for different aspect ratios and angle of attack = 10 degrees")
+            plt.grid(True)
+            plt.show()
+
+        if True: # Part B
+            constant4 = ConstantAirfoil(AR = 4, AOA_start=-4)
+            constant6 = ConstantAirfoil(AR = 6, AOA_start=-4)
+            constant8 = ConstantAirfoil(AR = 8, AOA_start=-4)
+            constant10 = ConstantAirfoil(AR = 10, AOA_start=-4)
+            constantinf = ConstantAirfoil(AR = 10000, AOA_start=-4)
+
+            # Cl
+            plt.figure()
+            plt.plot(constant4.general_Cl()[1], constant4.general_Cl()[0])
+            plt.plot(constant6.general_Cl()[1], constant6.general_Cl()[0])
+            plt.plot(constant8.general_Cl()[1], constant8.general_Cl()[0])
+            plt.plot(constant10.general_Cl()[1], constant10.general_Cl()[0])
+            plt.plot(constantinf.general_Cl()[1], constantinf.general_Cl()[0])
+            plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+            plt.xlabel("Angle of attack (degrees)")
+            plt.ylabel("Lift coefficient")
+            plt.title("Lift coefficient vs. Angle of attack for different aspect ratios")
+            plt.grid(True)
+
+            # Cdi
+            plt.figure()
+            plt.plot(constant4.general_Cdi()[1], constant4.general_Cdi()[0])
+            plt.plot(constant6.general_Cdi()[1], constant6.general_Cdi()[0])
+            plt.plot(constant8.general_Cdi()[1], constant8.general_Cdi()[0])
+            plt.plot(constant10.general_Cdi()[1], constant10.general_Cdi()[0])
+            plt.plot(constantinf.general_Cdi()[1], constantinf.general_Cdi()[0])
+            plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+            plt.xlabel("Angle of attack (degrees)")
+            plt.ylabel("Induced drag coefficient")
+            plt.title("Induced drag coefficient vs. Angle of attack for different aspect ratios")
+            plt.grid(True)
+
+            plt.show()
+
+
+    if True # Task 3
+        if False: # Part A
+            # Do something
 
     if False: # test
         alpha, alpha0, m0, cd_friction = get_xfoil_data("NACA4415", -6, 10, 0.5, 6e6)
