@@ -15,6 +15,9 @@ def solve_fourier_coefs(nA: int, m0: float, b: float, c: np.ndarray, alpha_L0: n
     theta: 1D array of theta values
     '''
     # Initialize ordinate vector - o
+
+    # b = 10
+
     o = np.full(nA, (alpha_L0 - alpha))
 
     # Initialize coefficient matrix - B
@@ -23,7 +26,7 @@ def solve_fourier_coefs(nA: int, m0: float, b: float, c: np.ndarray, alpha_L0: n
     # Fill in B matrix
     for j, theta in enumerate(theta_array):
         for i in range(nA):
-            B[i, j] = (-4*b/(m0*c[j]) * np.sin(((1+i))*theta) - (np.sin(((1+i))*theta)/np.sin(theta))) # Silde 26 week 8
+            B[i, j] = (-4*b/(m0*c[j]) * np.sin(((1+i))*theta) - (i+1)*(np.sin(((1+i))*theta)/np.sin(theta))) # Silde 26 week 8
 
     # Solve for A
     A = np.linalg.solve(B, o)
@@ -165,6 +168,8 @@ class ConstantAirfoil(EllipticAirfoil):
     def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 10, AOA_start = -6, AOA_end = 10, AOA_step = 0.5):
         self.c = 1
         super().__init__(AR, airfoil_name, Re, nA, AOA_start, AOA_end, AOA_step)
+        self.b = AR
+
     def ai(self) -> np.ndarray:
         '''
         Calculate the induced angle of attacks at each theta
@@ -178,125 +183,112 @@ class ConstantAirfoil(EllipticAirfoil):
                 ai[i, j] = ai_sum
         return ai, self.AOA*180/np.pi
 
+
+
 if __name__ == "__main__":
 
     if False: # Task 1
-        eliptic4 = EllipticAirfoil(AR = 4)
-        eliptic6 = EllipticAirfoil(AR = 6)
-        eliptic8 = EllipticAirfoil(AR = 8)
-        eliptic10 = EllipticAirfoil(AR = 10)
-        elipticinf = EllipticAirfoil(AR = 10000)
-
-        plt.figure()
-        plt.plot(eliptic4.general_Cl()[1], eliptic4.general_Cl()[0])
-        plt.plot(eliptic6.general_Cl()[1], eliptic6.general_Cl()[0])
-        plt.plot(eliptic8.general_Cl()[1], eliptic8.general_Cl()[0])
-        plt.plot(eliptic10.general_Cl()[1], eliptic10.general_Cl()[0])
-        plt.plot(elipticinf.general_Cl()[1], elipticinf.general_Cl()[0])
+        AR = [4, 6, 8, 10, 10000]
+        # AR = [10]
+        Foils = []
+        for ar in AR:
+            Foils.append(EllipticAirfoil(AR = ar))
         
+        # General Cl
+        plt.figure()
+        for foil in Foils:
+            plt.plot(foil.general_Cl()[1], foil.general_Cl()[0])
         plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
         plt.xlabel("Angle of attack (degrees)")
         plt.ylabel("Lift coefficient")
         plt.title("Lift coefficient vs. Angle of attack for different aspect ratios")
         plt.grid(True)
 
+        # General Cdi
         plt.figure()
-        plt.plot(eliptic4.general_Cdi()[1], eliptic4.general_Cdi()[0])
-        plt.plot(eliptic6.general_Cdi()[1], eliptic6.general_Cdi()[0])
-        plt.plot(eliptic8.general_Cdi()[1], eliptic8.general_Cdi()[0])
-        plt.plot(eliptic10.general_Cdi()[1], eliptic10.general_Cdi()[0])
-        plt.plot(elipticinf.general_Cdi()[1], elipticinf.general_Cdi()[0])
+        for foil in Foils:
+            plt.plot(foil.general_Cdi()[1], foil.general_Cdi()[0])
         plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
         plt.xlabel("Angle of attack (degrees)")
         plt.ylabel("Induced drag coefficient")
         plt.title("Induced drag coefficient vs. Angle of attack for different aspect ratios")
         plt.grid(True)
 
+        # ai
         plt.figure()
-        plt.plot(eliptic4.ai()[1], eliptic4.ai()[0])
-        plt.plot(eliptic6.ai()[1], eliptic6.ai()[0])
-        plt.plot(eliptic8.ai()[1], eliptic8.ai()[0])
-        plt.plot(eliptic10.ai()[1], eliptic10.ai()[0])
-        plt.plot(elipticinf.ai()[1], elipticinf.ai()[0])
+        for foil in Foils:
+            plt.plot(foil.ai()[1], foil.ai()[0])
         plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
         plt.xlabel("Angle of attack (degrees)")
         plt.ylabel("Induced angle of attack")
         plt.title("Induced angle of attack vs. Angle of attack for different aspect ratios")
         plt.grid(True)
 
+        # AOA
         plt.figure()
-        plt.plot(eliptic4.AOA*180/np.pi, eliptic4.cd_friction)
-        plt.plot(eliptic6.AOA*180/np.pi, eliptic6.cd_friction)
-        plt.plot(eliptic8.AOA*180/np.pi, eliptic8.cd_friction)
-        plt.plot(eliptic10.AOA*180/np.pi, eliptic10.cd_friction)
-        plt.plot(elipticinf.AOA*180/np.pi, elipticinf.cd_friction)
+        for foil in Foils:
+            plt.plot(foil.AOA*180/np.pi, foil.cd_friction)
         plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
         plt.xlabel("Angle of attack (degrees)")
         plt.ylabel("Friction drag coefficient")
         plt.title("Friction drag coefficient vs. Angle of attack for different aspect ratios")
         plt.grid(True)
-        plt.show()
 
+
+
+        plt.show()
 
     if True: # Task 2
         if True: # Part A
-            constant4 = ConstantAirfoil(AR = 4, AOA_start=0, AOA_end=10, AOA_step=5)
-            constant6 = ConstantAirfoil(AR = 6, AOA_start=0, AOA_end=10, AOA_step=5)
-            constant8 = ConstantAirfoil(AR = 8, AOA_start=0, AOA_end=10, AOA_step=5)
-            constant10 = ConstantAirfoil(AR = 10, AOA_start=0, AOA_end=10, AOA_step=5)
-            constantinf = ConstantAirfoil(AR = 10000, AOA_start=0, AOA_end=10, AOA_step=5)
+            AR = [4, 6, 8, 10, 10000]
+            # AR = [10]
+            Foils = []
+            for ar in AR:
+                Foils.append(ConstantAirfoil(AR = ar, AOA_start=0, AOA_end=10, AOA_step=0.5))
 
+            # AOA 0
             plt.figure()
-            plt.plot(constant4.theta, constant4.ai()[0][0]*180/np.pi)
-            plt.plot(constant6.theta, constant6.ai()[0][0]*180/np.pi)
-            plt.plot(constant8.theta, constant8.ai()[0][0]*180/np.pi)
-            plt.plot(constant10.theta, constant10.ai()[0][0]*180/np.pi)
-            plt.plot(constantinf.theta, constantinf.ai()[0][0]*180/np.pi)
+            for foil in Foils:
+                plt.plot(foil.theta, abs(foil.ai()[0][0]*180/np.pi))
             plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
             plt.xlabel("Theta")
             plt.ylabel("Induced angle of attack")
             plt.title("Induced angle of attack vs. Theta for different aspect ratios and angle of attack = 0 degrees")
             plt.grid(True)
 
+            # AOA 5
             plt.figure()
-            plt.plot(constant4.theta, constant4.ai()[0][1]*180/np.pi)
-            plt.plot(constant6.theta, constant6.ai()[0][1]*180/np.pi)
-            plt.plot(constant8.theta, constant8.ai()[0][1]*180/np.pi)
-            plt.plot(constant10.theta, constant10.ai()[0][1]*180/np.pi)
-            plt.plot(constantinf.theta, constantinf.ai()[0][1]*180/np.pi)
+            for foil in Foils:
+                plt.plot(foil.theta, foil.ai()[0][1]*180/np.pi)
             plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
             plt.xlabel("Theta")
             plt.ylabel("Induced angle of attack")
             plt.title("Induced angle of attack vs. Theta for different aspect ratios and angle of attack = 5 degrees")
             plt.grid(True)
 
+            # AOA 10
             plt.figure()
-            plt.plot(constant4.theta, constant4.ai()[0][2]*180/np.pi)
-            plt.plot(constant6.theta, constant6.ai()[0][2]*180/np.pi)
-            plt.plot(constant8.theta, constant8.ai()[0][2]*180/np.pi)
-            plt.plot(constant10.theta, constant10.ai()[0][2]*180/np.pi)
-            plt.plot(constantinf.theta, constantinf.ai()[0][2]*180/np.pi)
+            for foil in Foils:
+                plt.plot(foil.theta, foil.ai()[0][2]*180/np.pi)
             plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
             plt.xlabel("Theta")
             plt.ylabel("Induced angle of attack")
             plt.title("Induced angle of attack vs. Theta for different aspect ratios and angle of attack = 10 degrees")
             plt.grid(True)
+            
             plt.show()
-
+            
         if False: # Part B
-            constant4 = ConstantAirfoil(AR = 4, AOA_start=-4)
-            constant6 = ConstantAirfoil(AR = 6, AOA_start=-4)
-            constant8 = ConstantAirfoil(AR = 8, AOA_start=-4)
-            constant10 = ConstantAirfoil(AR = 10, AOA_start=-4)
-            constantinf = ConstantAirfoil(AR = 10000, AOA_start=-4)
+            AR = [4, 6, 8, 10, 10000]
+            Foils = []
 
-            # Cl
+            for ar in AR:
+                Foils.append(ConstantAirfoil(AR = ar, AOA_start=-4))
+
+            # CL
             plt.figure()
-            plt.plot(constant4.general_Cl()[1], constant4.general_Cl()[0])
-            plt.plot(constant6.general_Cl()[1], constant6.general_Cl()[0])
-            plt.plot(constant8.general_Cl()[1], constant8.general_Cl()[0])
-            plt.plot(constant10.general_Cl()[1], constant10.general_Cl()[0])
-            plt.plot(constantinf.general_Cl()[1], constantinf.general_Cl()[0])
+            for foil in Foils:
+                plt.plot(foil.general_Cl()[1], foil.general_Cl()[0])
             plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
             plt.xlabel("Angle of attack (degrees)")
             plt.ylabel("Lift coefficient")
@@ -305,11 +297,8 @@ if __name__ == "__main__":
 
             # Cdi
             plt.figure()
-            plt.plot(constant4.general_Cdi()[1], constant4.general_Cdi()[0])
-            plt.plot(constant6.general_Cdi()[1], constant6.general_Cdi()[0])
-            plt.plot(constant8.general_Cdi()[1], constant8.general_Cdi()[0])
-            plt.plot(constant10.general_Cdi()[1], constant10.general_Cdi()[0])
-            plt.plot(constantinf.general_Cdi()[1], constantinf.general_Cdi()[0])
+            for foil in Foils:
+                plt.plot(foil.general_Cdi()[1], foil.general_Cdi()[0])
             plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
             plt.xlabel("Angle of attack (degrees)")
             plt.ylabel("Induced drag coefficient")
@@ -317,8 +306,7 @@ if __name__ == "__main__":
             plt.grid(True)
 
             plt.show()
-
-        
+    
 
     if False: # test
         alpha, alpha0, m0, cd_friction = get_xfoil_data("NACA4415", -6, 10, 0.5, 6e6)
