@@ -7,31 +7,37 @@ def solve_fourier_coefs(nA: int, m0: float, b: float, c: np.ndarray, alpha_L0: n
     '''
     Calculates the Fourier coefficients for a given airfoil at a specific angle of attack
     nA: Number of Fourier coefficients
-    m0: 1D array of slope of lift curve
+    m0: Slope of lift curve
     b: Wing span
     c: 1D array of cord values
     alpha_L0: 1D array of zero lift angle of attack
     alpha: 1D array of angle of attack
-    theta: 1D array of theta values
+    theta_array: 1D array of theta values
     '''
     # Initialize ordinate vector - o
-
-    # b = 10
-
-    o = np.full(nA, (alpha_L0 - alpha))
+    B = np.full(nA, (- alpha + alpha_L0) )
 
     # Initialize coefficient matrix - B
-    B = np.zeros((nA, nA))
+    A = np.zeros((nA, nA))
 
-    # Fill in B matrix
+    # Fill in B matrix -  Silde 26 week 8
     for j, theta in enumerate(theta_array):
         for i in range(nA):
-            B[i, j] = (-4*b/(m0*c[j]) * np.sin(((1+i))*theta) - (i+1)*(np.sin(((1+i))*theta)/np.sin(theta))) # Silde 26 week 8
+            k1 = 4 * b * np.sin((i+1)*theta) / (m0 * c[j])
+            if i == 0:
+                k2 = 1
+            else:
+                k2 = (i+1) * np.sin((i+1)*theta) / np.sin(theta)
+
+            if i >= j:
+                A[i, j] = - k1 - k2
+            else:
+                A[i, j] = 0
 
     # Solve for A
-    A = np.linalg.solve(B, o)
+    x = np.linalg.solve(A, B)
 
-    return A
+    return x
 
 
 def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step: float, Re: float):
@@ -92,7 +98,7 @@ def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step
     return alpha, alpha0, m0, cd_friction
 
 class EllipticAirfoil():
-    def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 10, AOA_start = -6, AOA_end = 10, AOA_step = 0.5):
+    def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 5, AOA_start = -6, AOA_end = 10, AOA_step = 0.5):
         '''
         airfoil_name: Airfoil section name eg. NACA4415
         Re: Reynolds number
@@ -187,7 +193,7 @@ class ConstantAirfoil(EllipticAirfoil):
 
 if __name__ == "__main__":
 
-    if False: # Task 1
+    if True: # Task 1
         AR = [4, 6, 8, 10, 10000]
         # AR = [10]
         Foils = []
@@ -238,7 +244,7 @@ if __name__ == "__main__":
 
         plt.show()
 
-    if True: # Task 2
+    if False: # Task 2
         if True: # Part A
             AR = [4, 6, 8, 10, 10000]
             # AR = [10]
