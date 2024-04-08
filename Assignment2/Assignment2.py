@@ -28,7 +28,7 @@ def solve_fourier_coefs(nA: int, m0: float, b: float, c: np.ndarray, alpha_L0: n
     # Solve for A
     A = np.linalg.solve(B, o)
 
-    A[abs(A) < 1e-15] = 0
+    A[abs(A) < 1e-20] = 0
     return A
 
 
@@ -139,7 +139,7 @@ class EllipticAirfoil():
         Calculate the friction drag
         return: Friction drag, Angle of attacks in degrees
         '''
-        cd_fric = self.cd_friction * self.S / self.b
+        cd_fric = 2 * self.cd_friction
         return cd_fric, self.AOA*180/np.pi
 
     def analytical_cl(self) -> np.ndarray:
@@ -194,7 +194,7 @@ class EllipticAirfoil():
             for j in range(len(self.theta)):
                 ai_sum = 0
                 for n in range(self.nA):
-                    sum =+ (n+1)*self.A[n,i] * np.sin((n+1)*self.theta[j]) / np.sin(self.theta[j]) # slide 26 week 8 - 8.45 i bogen
+                    sum = (n+1)*self.A[n,i] * np.sin((n+1)*self.theta[j]) / np.sin(self.theta[j]) # slide 26 week 8 - 8.45 i bogen
                     ai_sum = ai_sum + sum
                 ai[i, j] = ai_sum
         return ai*180/np.pi, self.AOA*180/np.pi
@@ -244,8 +244,6 @@ class ConstantAirfoil():
         for i, AOA in enumerate(self.AOA):
             self.A[:,i] = solve_fourier_coefs(nA=self.nA, m0=self.m0, b=self.b, c=self.c, alpha_L0=self.alpha0, alpha=AOA, theta_array=self.theta)
 
-
-
     def ai(self) -> np.ndarray:
         '''
         Calculate the induced angle of attacks
@@ -278,9 +276,11 @@ class ConstantAirfoil():
         Calculate the induced drag coefficients
         return: Induced drag coefficients, Angle of attacks in degrees
         '''
-        # Calculate lift coefficient
+        # Calculate lift coefficient - Slide 27 week 8 - 8.52 i bogen
+        cDi_sum = 0
         for i in range(len(self.A[:,0])):
-            cDi_sum =+ (i+1) * self.A[i,:]**2
+            sum = (i+1) * self.A[i,:]**2
+            cDi_sum = cDi_sum + sum
         cDi = np.pi * self.AR * cDi_sum
         return cDi, self.AOA*180/np.pi
 
@@ -344,7 +344,6 @@ class TwistAirfoil():
 
         return self.theta, cl
     
-
     def local_Cdi(self):
         cl = self.local_cl()[1]
         ai = self.local_ai()[1]
@@ -368,7 +367,7 @@ class TwistAirfoil():
 
 if __name__ == "__main__":
 
-    if True: # Task 1
+    if False: # Task 1
         AR = [4, 6, 8, 10, 10000]
         # AR = [10]
         Foils = []
@@ -480,7 +479,7 @@ if __name__ == "__main__":
             
             plt.show()
             
-        if False: # Part B
+        if True: # Part B
             AR = [4, 6, 8, 10, 10000]
             # AR = [10]
             Foils = []
@@ -510,7 +509,7 @@ if __name__ == "__main__":
 
             plt.show()
     
-    if False: # Task 4
+    if True: # Task 4
         angles = [0, 2, 4, 6, 8]
         Foils = []
         for angle in angles:
@@ -557,11 +556,3 @@ if __name__ == "__main__":
         plt.grid(True)
 
         plt.show()
-
-
-    if False: # test
-        Test = TwistAirfoil()
-        
-
-
-    print("Stop")
