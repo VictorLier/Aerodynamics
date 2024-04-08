@@ -1,11 +1,29 @@
-def solve_for_A(theta_arr, m0=1, b=1, c=1, alpha_L0=1, alpha=1/2):
-    B_temp = []
-    for theta in theta_arr:
-        B_temp.append([ (-4*b/(m0*c) * np.sin((1+i*2)*theta) - (np.sin((1+i*2)*theta)/np.sin(theta))) for i in range(len(theta_arr))])
-    B = np.array(B_temp)
-    b = np.ones(len(theta_arr))*(alpha_L0-alpha)
-    a = np.linalg.inv(B) @ b
-    return a
+import numpy as np
 
-theta = np.linspace(np.pi/6, np.pi*5/6, 3)
-print(solve_for_A(theta))
+nA = 10
+dpi = np.pi/nA
+theta_array = np.linspace(dpi, np.pi-dpi, nA)
+
+alpha_L0 = -0.0854964326076398
+alpha = 0.17453292519943295
+
+m0 = 5.856774581827276
+b = 7853.981633974483
+
+AR = 4
+
+# Initialize ordinate vector - o
+o = np.array([])
+
+# Initialize coefficient matrix - B
+B = np.zeros((nA, nA))
+
+# Fill in B matrix
+for j, theta in enumerate(theta_array):
+    for i in range(nA):
+        B[j, i] = (-4*AR/m0 * np.sin((1+i)*theta) - (1+i)*(np.sin((1+i)*theta)/np.sin(theta))) # Silde 26 week 8
+    o = np.append(o, alpha - alpha_L0)
+# Solve for A
+A = np.linalg.solve(B, o)
+
+print("A", np.round(A,7))

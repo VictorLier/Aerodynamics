@@ -15,29 +15,21 @@ def solve_fourier_coefs(nA: int, m0: float, b: float, c: np.ndarray, alpha_L0: n
     theta_array: 1D array of theta values
     '''
     # Initialize ordinate vector - o
-    B = np.full(nA, (- alpha + alpha_L0) )
+    o = np.full(nA, (-alpha + alpha_L0) )
 
     # Initialize coefficient matrix - B
-    A = np.zeros((nA, nA))
+    B = np.zeros((nA, nA))
 
     # Fill in B matrix -  Silde 26 week 8
     for j, theta in enumerate(theta_array):
         for i in range(nA):
-            k1 = 4 * b * np.sin((i+1)*theta) / (m0 * c[j])
-            if i == 0:
-                k2 = 1
-            else:
-                k2 = (i+1) * np.sin((i+1)*theta) / np.sin(theta)
-
-            if i >= j:
-                A[i, j] = - k1 - k2
-            else:
-                A[i, j] = 0
+            B[j, i] = (-4*b*np.sin((1+i)*theta) / (m0 * c[j]) - (1+i)*(np.sin((1+i)*theta)/np.sin(theta))) # Silde 26 week 8
 
     # Solve for A
-    x = np.linalg.solve(A, B)
+    A = np.linalg.solve(B, o)
 
-    return x
+    A[abs(A) < 1e-15] = 0
+    return A
 
 
 def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step: float, Re: float):
@@ -141,13 +133,30 @@ class EllipticAirfoil():
         for i, AOA in enumerate(self.AOA):
             self.A[:,i] = solve_fourier_coefs(nA=self.nA, m0=self.m0, b=self.b, c=self.c, alpha_L0=self.alpha0, alpha=AOA, theta_array=self.theta)
 
+    def analytical_cl(self) -> np.ndarray:
+        '''
+        Calculate the lift coefficients using the analytical solution
+        return: Lift coefficients, Angle of attacks in degrees
+        '''
+        cl = 2*np.pi / (1 + 2 / self.AR) * (self.AOA - self.alpha0) # Slide 21 week 8 - 8.36 i bogen
+        return cl, self.AOA*180/np.pi
+    
+    def analytical_Cdi(self) -> np.ndarray:
+        '''
+        Calculate the induced drag coefficients using the analytical solution
+        return: Induced drag coefficients, Angle of attacks in degrees
+        '''
+        cl = self.analytical_cl()[0]
+        CDi = 1 / (np.pi * self.AR) * cl**2 # Slide 21 week 8 - 8.37 i bogen
+        return CDi, self.AOA*180/np.pi
+
     def general_Cl(self) -> np.ndarray:
         '''
         Calculate the lift coefficients
         return: Lift coefficients, Angle of attacks in degrees
         '''
         # Calculate lift coefficient
-        cl = np.pi * self.AR * self.A[0,:] # Slide 27 week 8
+        cl = np.pi * self.AR * self.A[0,:] # Slide 27 week 8 - 8.50 i bogen
         return cl, self.AOA*180/np.pi
     
     def general_Cdi(self) -> np.ndarray:
@@ -155,45 +164,118 @@ class EllipticAirfoil():
         Calculate the induced drag coefficients
         return: Induced drag coefficients, Angle of attacks in degrees
         '''
-        # Calculate lift coefficient - Slide 27 week 8
-        for i in range(len(self.A)):
-            cDi_sum =+ (i+1) * self.A[i,:]**2
+        # Calculate lift coefficient - Slide 27 week 8 - 8.52 i bogen
+        cDi_sum = 0
+        for i in range(len(self.A[:,0])):
+            sum = (i+1) * self.A[i,:]**2
+            cDi_sum = cDi_sum + sum
         cDi = np.pi * self.AR * cDi_sum
         return cDi, self.AOA*180/np.pi
 
     def ai(self) -> np.ndarray:
         '''
-        Calculate the maximum induced angle of attacks
+        Calculate the induced angle of attacks
         return: Induced angles of attack, Angle of attack in degrees
         '''
-        for i in range(len(self.A)):    # Slide 26 week 8 - ??????????
-            ai_sum =+ (i+1) * self.A[i,:]
-        return ai_sum, self.AOA*180/np.pi
+        # Initilize ai matrix, [AOA, theta]
+        ai = np.zeros((len(self.AOA), len(self.theta)))
 
-class ConstantAirfoil(EllipticAirfoil):
-    def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 10, AOA_start = -6, AOA_end = 10, AOA_step = 0.5):
-        self.c = 1
-        super().__init__(AR, airfoil_name, Re, nA, AOA_start, AOA_end, AOA_step)
-        self.b = AR
+        # Calculate ai for each AOA and theta
+        for i in range(len(self.AOA)):
+            for j in range(len(self.theta)):
+                ai_sum = 0
+                for n in range(self.nA):
+                    sum =+ (n+1)*self.A[n,i] * np.sin((n+1)*self.theta[j]) / np.sin(self.theta[j]) # slide 26 week 8 - 8.45 i bogen
+                    ai_sum = ai_sum + sum
+                ai[i, j] = ai_sum
+        return ai*180/np.pi, self.AOA*180/np.pi
+
+class ConstantAirfoil():
+    def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 11, AOA_start = 0, AOA_end = 10, AOA_step = 5):
+        '''
+        airfoil_name: Airfoil section name eg. NACA4415
+        Re: Reynolds number
+        nA: Number of Fourier coefficients/theta values
+        AR: Aspect ratio
+        AOA_start: Start angle of attack [degrees]
+        AOA_end: End angle of attack [degrees]
+        AOA_step: Angle of attack step [degrees]
+        '''
+        self.airfoil_name = airfoil_name
+        self.Re = Re
+        self.nA = nA
+        self.AR = AR
+        self.AOA_start = AOA_start
+        self.AOA_end = AOA_end
+        self.AOA_step = AOA_step
+
+        # Get xfoil data - list of angles [radians], zero lift angle of attack [radians], slope of lift curve, friction drag coefficient
+        self.AOA, self.alpha0, self.m0, self.cd_friction = get_xfoil_data(self.airfoil_name, self.AOA_start, self.AOA_end, self.AOA_step, self.Re)
+
+        # List of theta values
+        dpi = np.pi/self.nA
+        self.theta = np.linspace(dpi, np.pi-dpi, self.nA)
+
+        # Cord function - root cord c0 = 1
+        c0 = 1
+        self.c = c0 * np.ones(self.nA)
+
+        # Wing span
+        self.b = self.AR
+
+        # Wing area
+        self.S = self.c * self.b
+        
+        # Calculate Fourier coefficients
+        # initialize A for each AOA
+        self.A = np.empty((self.nA, len(self.AOA)))
+
+        # Calculate A vector for each AOA and store in A
+        for i, AOA in enumerate(self.AOA):
+            self.A[:,i] = solve_fourier_coefs(nA=self.nA, m0=self.m0, b=self.b, c=self.c, alpha_L0=self.alpha0, alpha=AOA, theta_array=self.theta)
 
     def ai(self) -> np.ndarray:
         '''
-        Calculate the induced angle of attacks at each theta
-        return: Induced angle of attack, Angle of attack in degrees
+        Calculate the induced angle of attacks
+        return: Induced angles of attack, Angle of attack in degrees
         '''
-        ai = np.zeros((len(self.AOA), self.nA))
-        for i, AOA in enumerate(self.AOA):
-            for j, theta in enumerate(self.theta):
-                for n in range(self.nA):
-                    ai_sum =+ (n+1)*self.A[n,i] * np.sin((n+1)*theta) / np.sin(theta) # slide 26 week 8
-                ai[i, j] = ai_sum
-        return ai, self.AOA*180/np.pi
+        # Initilize ai matrix, [AOA, theta]
+        ai = np.zeros((len(self.AOA), len(self.theta)))
 
+        # Calculate ai for each AOA and theta
+        for i in range(len(self.AOA)):
+            for j in range(len(self.theta)):
+                ai_sum = 0
+                for n in range(self.nA):
+                    sum = (n+1)*self.A[n,i] * np.sin((n+1)*self.theta[j]) / np.sin(self.theta[j])
+                    ai_sum = ai_sum + sum
+                ai[i, j] = ai_sum
+        return ai , self.AOA*180/np.pi
+    
+    def general_Cl(self) -> np.ndarray:
+        '''
+        Calculate the lift coefficients
+        return: Lift coefficients, Angle of attacks in degrees
+        '''
+        # Calculate lift coefficient
+        cl = np.pi * self.AR * self.A[0,:]
+        return cl, self.AOA*180/np.pi
+
+    def general_Cdi(self) -> np.ndarray:
+        '''
+        Calculate the induced drag coefficients
+        return: Induced drag coefficients, Angle of attacks in degrees
+        '''
+        # Calculate lift coefficient
+        for i in range(len(self.A[:,0])):
+            cDi_sum =+ (i+1) * self.A[i,:]**2
+        cDi = np.pi * self.AR * cDi_sum
+        return cDi, self.AOA*180/np.pi
 
 
 if __name__ == "__main__":
 
-    if True: # Task 1
+    if False: # Task 1
         AR = [4, 6, 8, 10, 10000]
         # AR = [10]
         Foils = []
@@ -210,6 +292,16 @@ if __name__ == "__main__":
         plt.title("Lift coefficient vs. Angle of attack for different aspect ratios")
         plt.grid(True)
 
+        # # Analytical Cl
+        plt.figure()
+        for foil in Foils:
+            plt.plot(foil.analytical_cl()[1], foil.analytical_cl()[0])
+        plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+        plt.xlabel("Angle of attack (degrees)")
+        plt.ylabel("Lift coefficient")
+        plt.title("Analytical lift coefficient vs. Angle of attack for different aspect ratios")
+        plt.grid(True)
+
         # General Cdi
         plt.figure()
         for foil in Foils:
@@ -220,17 +312,28 @@ if __name__ == "__main__":
         plt.title("Induced drag coefficient vs. Angle of attack for different aspect ratios")
         plt.grid(True)
 
+        # Analytical Cdi
+        plt.figure()
+        for foil in Foils:
+            plt.plot(foil.analytical_Cdi()[1], foil.analytical_Cdi()[0])
+        plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
+        plt.xlabel("Angle of attack (degrees)")
+        plt.ylabel("Induced drag coefficient")
+        plt.title("Analytical induced drag coefficient vs. Angle of attack for different aspect ratios")
+        plt.grid(True)
+
+
         # ai
         plt.figure()
         for foil in Foils:
-            plt.plot(foil.ai()[1], foil.ai()[0])
+            plt.plot(foil.ai()[1], foil.ai()[0][:,0])
         plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
         plt.xlabel("Angle of attack (degrees)")
         plt.ylabel("Induced angle of attack")
         plt.title("Induced angle of attack vs. Angle of attack for different aspect ratios")
         plt.grid(True)
 
-        # AOA
+        # # AOA
         plt.figure()
         for foil in Foils:
             plt.plot(foil.AOA*180/np.pi, foil.cd_friction)
@@ -244,18 +347,18 @@ if __name__ == "__main__":
 
         plt.show()
 
-    if False: # Task 2
+    if True: # Task 2
         if True: # Part A
             AR = [4, 6, 8, 10, 10000]
             # AR = [10]
             Foils = []
             for ar in AR:
-                Foils.append(ConstantAirfoil(AR = ar, AOA_start=0, AOA_end=10, AOA_step=0.5))
+                Foils.append(ConstantAirfoil(AR = ar, AOA_start=0, AOA_end=10, AOA_step=5))
 
             # AOA 0
             plt.figure()
             for foil in Foils:
-                plt.plot(foil.theta, abs(foil.ai()[0][0]*180/np.pi))
+                plt.plot(foil.theta, foil.ai()[0][0]*180/np.pi)
             plt.legend(["AR=4", "AR=6", "AR=8", "AR=10", "AR=inf"])
             plt.xlabel("Theta")
             plt.ylabel("Induced angle of attack")
@@ -286,10 +389,11 @@ if __name__ == "__main__":
             
         if False: # Part B
             AR = [4, 6, 8, 10, 10000]
+            # AR = [10]
             Foils = []
 
             for ar in AR:
-                Foils.append(ConstantAirfoil(AR = ar, AOA_start=-4))
+                Foils.append(ConstantAirfoil(AR = ar, AOA_start=-4, AOA_end=10, AOA_step=0.5))
 
             # CL
             plt.figure()
