@@ -200,7 +200,7 @@ class EllipticAirfoil():
         return ai*180/np.pi, self.AOA*180/np.pi
 
 class ConstantAirfoil():
-    def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 11, AOA_start = 0, AOA_end = 10, AOA_step = 5, twist = False):
+    def __init__(self, AR, airfoil_name = "NACA4415", Re = 6e6, nA = 50, AOA_start = 0, AOA_end = 10, AOA_step = 5, twist = False):
         '''
         airfoil_name: Airfoil section name eg. NACA4415
         Re: Reynolds number
@@ -300,12 +300,10 @@ class TwistAirfoil():
         # Get xfoil data - list of angles [radians], zero lift angle of attack [radians], slope of lift curve, friction drag coefficient
         self.AOA, self.alpha0, self.m0, self.cd_friction = get_xfoil_data(airfoil_name=self.airfoil_name, AOA_start=0, AOA_end=8, AOA_step=2, Re=self.Re)
 
-
-
+        # Twist anfle along the wing
         self.alpha = self.alpha_c + (self.alpha_tip - self.alpha_c) * abs(np.cos(self.theta))
-    
-        # solve for fourier coefficients
 
+        # Solve the fourier coefficients
         # Initialize ordinate vector - o
         o = - self.alpha + self.alpha0
 
@@ -323,6 +321,9 @@ class TwistAirfoil():
 
 
     def local_ai(self):
+        '''
+        Calculate the local induced angle of attack
+        '''
         ai = np.zeros(len(self.theta))
         for i, theta in enumerate(self.theta):
             ai_sum = 0
@@ -334,6 +335,9 @@ class TwistAirfoil():
         return self.theta, ai
 
     def local_cl(self):
+        '''
+        Calculate the local lift coefficient
+        '''
         cl = np.zeros(len(self.theta))
         for i, theta in enumerate(self.theta):
             cl_sum = 0
@@ -345,6 +349,9 @@ class TwistAirfoil():
         return self.theta, cl
     
     def local_Cdi(self):
+        '''
+        Calculate the local induced drag coefficient
+        '''
         cl = self.local_cl()[1]
         ai = self.local_ai()[1]
         CDi = cl * ai
@@ -352,6 +359,9 @@ class TwistAirfoil():
         return self.theta, CDi
 
     def circulation(self):
+        '''
+        Calculate the local circulation
+        '''
         circulation = np.zeros(len(self.theta))
         
         for i, theta in enumerate(self.theta):
@@ -369,7 +379,6 @@ if __name__ == "__main__":
 
     if False: # Task 1
         AR = [4, 6, 8, 10, 10000]
-        # AR = [10]
         Foils = []
         for ar in AR:
             Foils.append(EllipticAirfoil(AR = ar))
@@ -384,7 +393,7 @@ if __name__ == "__main__":
         plt.title("Lift coefficient vs. Angle of attack")
         plt.grid(True)
 
-        # # Analytical Cl
+        # Analytical Cl
         plt.figure()
         for foil in Foils:
             plt.plot(foil.analytical_cl()[1], foil.analytical_cl()[0])
@@ -414,7 +423,6 @@ if __name__ == "__main__":
         plt.title("Analytical induced drag coefficient vs. Angle of attack")
         plt.grid(True)
 
-
         # ai
         plt.figure()
         for foil in Foils:
@@ -435,8 +443,6 @@ if __name__ == "__main__":
         plt.title("Friction drag coefficient vs. Angle of attack")
         plt.grid(True)
 
-
-
         plt.show()
 
     if False: # Task 2
@@ -456,6 +462,7 @@ if __name__ == "__main__":
             plt.ylabel("Induced angle of attack")
             plt.title("Induced angle of attack vs. Theta angle of attack = 0 degrees")
             plt.grid(True)
+
 
             # AOA 5
             plt.figure()
@@ -479,7 +486,7 @@ if __name__ == "__main__":
             
             plt.show()
             
-        if True: # Part B
+        if False: # Part B
             AR = [4, 6, 8, 10, 10000]
             # AR = [10]
             Foils = []
@@ -509,7 +516,7 @@ if __name__ == "__main__":
 
             plt.show()
     
-    if True: # Task 4
+    if False: # Task 4
         angles = [0, 2, 4, 6, 8]
         Foils = []
         for angle in angles:
