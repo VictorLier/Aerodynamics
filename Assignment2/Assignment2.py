@@ -39,7 +39,7 @@ def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step
     Output: alpha [radians], alpha0 [radians], m0 (slope), cd_friction
     '''
     # File name
-    polar_file_path = f"Assignment2\{airfoil_name}_{AOA_start}_{AOA_end}_{AOA_step}_{Re}.txt"
+    polar_file_path = f"Assignment2/{airfoil_name}_{AOA_start}_{AOA_end}_{AOA_step}_{Re}.txt"
 
 
 
@@ -59,7 +59,7 @@ def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step
         return alpha, alpha0, m0, cd_friction
     
     # Create input file
-    input_file = open("Assignment2\input.in", 'w')
+    input_file = open("Assignment2/input.in", 'w')
     input_file.write(f"{airfoil_name}\n")
     input_file.write("PANE\n")
     input_file.write("OPER\n")
@@ -377,7 +377,7 @@ class TwistAirfoil():
 
 if __name__ == "__main__":
 
-    if False: # Task 1
+    if True: # Task 1
         AR = [4, 6, 8, 10, 10000]
         Foils = []
         for ar in AR:
