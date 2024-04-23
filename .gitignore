@@ -1,5 +1,6 @@
 # txt files
 *.txt
+!requirements.txt
 
 # input files
 *.in
