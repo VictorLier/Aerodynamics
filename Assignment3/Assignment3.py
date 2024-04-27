@@ -2,93 +2,45 @@ import numpy as np
 import math
 import os
 import subprocess
+import matplotlib.pyplot as plt
+from scipy.stats import linregress
 
-def solve_fourier_coefs(nA: int, m0: float, b: float, c: np.ndarray, alpha_L0: np.ndarray, alpha: np.ndarray, theta_array: np.ndarray) -> np.ndarray:
+
+def linear_reg_limits(x: np.ndarray, y: np.ndarray, start: int, min_step: int, buffer: float = 1):
     '''
-    Calculates the Fourier coefficients for a given airfoil at a specific angle of attack
-    nA: Number of Fourier coefficients
-    m0: Slope of lift curve
-    b: Wing span
-    c: 1D array of cord values
-    alpha_L0: 1D array of zero lift angle of attack
-    alpha: 1D array of angle of attack
-    theta_array: 1D array of theta values
+    Finds the linear regression of a set of data points and the limits for a valid data set
+    x: 1D array of x values
+    y: 1D array of y values
+    start: int, start index
+    min_steps: int, first step size
+    outputs
+    slope: float, slope of the linear regression
+    intercept: float, intercept of the linear regression
+    min_step: int, end index
+    buffer: float, amount of min_steps to go backwards
     '''
-    # Initialize ordinate vector - o
-    o = np.full(nA, (-alpha + alpha_L0) )
 
-    # Initialize coefficient matrix - B
-    B = np.zeros((nA, nA))
+    stop = len(x[start:])
 
-    # Fill in B matrix -  Silde 26 week 8
-    for j, theta in enumerate(theta_array):
-        for i in range(nA):
-            B[j, i] = (-4*b*np.sin((1+i)*theta) / (m0 * c[j]) - (1+i)*(np.sin((1+i)*theta)/np.sin(theta))) # Silde 26 week 8
+    i = 1
+    r_square = 1
 
-    # Solve for A
-    A = np.linalg.solve(B, o)
+    while r_square > 0.99:
+        x_data = x[start:start+min_step+i]
+        y_data = y[start:start+min_step+i]
+        slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data) 
+        r_square = r_value**2
+        i += 1
+        if start+min_step+i >= stop:
+            break
 
-    A[abs(A) < 1e-20] = 0
-    return A
+    back = int(min_step*buffer)
+    x_data = x[start:start+min_step+i-back]
+    y_data = y[start:start+min_step+i-back]
+    slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
+    max_step = start+min_step+i-back
 
-
-def get_xfoil_data(airfoil_name: str, AOA_start: float, AOA_end: float, AOA_step: float, Re: float):
-    '''
-    Run xfoil and get data for a given airfoil
-    Input: airfoil_name, AOA_start [degrees], AOA_end [degrees], AOA_step [degrees], Re
-    Output: alpha [radians], alpha0 [radians], m0 (slope), cd_friction
-    '''
-    # File name
-    polar_file_path = f"Assignment2/{airfoil_name}_{AOA_start}_{AOA_end}_{AOA_step}_{Re}.txt"
-
-
-
-    # Check if polar file already exists
-    if os.path.exists(polar_file_path):
-        data = np.loadtxt(polar_file_path, skiprows=12)
-        alpha = data[:, 0] * np.pi/180
-        cl = data[:, 1]
-        cd = data[:, 2]
-        cdp = data[:, 3]
-
-        # calculate slope and intercept of lift curve
-        m0, cl0 = np.polyfit(alpha, cl, 1) # Assumes linear lift curve slope
-        alpha0 = -cl0/m0 # Zero lift angle of attack in degrees
-        cd_friction = cd # Friction drag coefficient
-
-        return alpha, alpha0, m0, cd_friction
-    
-    # Create input file
-    input_file = open("Assignment2/input.in", 'w')
-    input_file.write(f"{airfoil_name}\n")
-    input_file.write("PANE\n")
-    input_file.write("OPER\n")
-    input_file.write(f"Visc {Re}\n")
-    input_file.write("PACC\n")
-    input_file.write(f"{polar_file_path}\n\n")
-    input_file.write("ITER 100\n")
-    input_file.write("ASeq {0} {1} {2}\n".format(AOA_start, AOA_end, AOA_step))
-    input_file.write("\n\n")
-    input_file.write("quit\n")
-    input_file.close()
-
-    # Run xfoil
-    subprocess.call("Assignment2\\xfoil.exe < Assignment2\\input.in", shell=True)
-
-    # Read data from polar file
-    data = np.loadtxt(polar_file_path, skiprows=12)
-    alpha = data[:, 0] * np.pi/180
-    cl = data[:, 1]
-    cd = data[:, 2]
-    cdp = data[:, 3]
-
-    # calculate slope and intercept of lift curve
-    m0, cl0 = np.polyfit(alpha, cl, 1) # Assumes linear lift curve slope
-    alpha0 = -cl0/m0 # Zero lift angle of attack in degrees
-    cd_friction = cd # Friction drag coefficient
-
-    return alpha, alpha0, m0, cd_friction
-
+    return slope, intercept, max_step
 
 
 class Battery:
@@ -219,56 +171,229 @@ class Prop:
         
 
 class Wing:
-    def __init__(self, min_lift: float, min_speed: float, max_speed: float, center_chord: float, airfoil = "NACA4415"):
+    def __init__(self, min_lift: float, min_speed: float, max_speed: float, aspect_ratio: float, airfoil = "NACA4415", bodyarea = 0.2, bodyCD = 0.2):
         '''
-        min_lift: float, minimum lift of the wing in N
+        min_lift: float, minimum lift of the wing in Kg
         min_speed: float, minimum speed of the wing in m/s
         max_speed: float, maximum speed of the wing in m/s
-        chord: float, chord of the wing in m
+        aspect_ratio: float, aspect ratio of the wing
         airfoil: str, airfoil of the wing eg. "NACA4415"
+        bodyarea: float, body area in m^2
+        bodyCD: float, body drag coefficient
         '''
-        self.min_lift = min_lift
-        self.min_speed = min_speed
-        self.max_speed = max_speed
-        self.c0 = center_chord
-        self.airfoil = airfoil
+        self.min_lift = min_lift * 9.82 # Minimum lift in N
+        self.min_speed = min_speed # Minimum speed in m/s
+        self.max_speed = max_speed # Maximum speed in m/s
+        self.AR = aspect_ratio # Aspect ratio
+        self.airfoil = airfoil # Airfoil of the wing
         self.rho = 1.225 # Air density [kg/m^3]
+        self.bodyarea = bodyarea # Body area in m^2
+        self.bodyCD = bodyCD # Body drag coefficient
 
-    def Re(self, speed: float):
+    def reynolds(self, speed: float, c = 0.2): # 
         '''
         calculates the Reynolds number of the wing
+        speed: float, speed of the wing in m/s
+        c: float, chord of the wing in m - Assumes 0.2 as default
         '''
         v = 1.5e-5 # Dynamic viscosity of air [m^2/s]
-        self.Re = speed * self.c0 / v # Reynolds number
+        re = speed * c / v # Reynolds number
+        return re
+
+    def xfoil_data(self, plot=False, min_speed = True):
+        '''
+        Runs xfoil and gets data for the wing
+        plot: bool, if True, plots the data
+        min_max: bool, if True, gets data for min speed, else gets data for max speed
+        '''
+        if min_speed:
+            re = self.reynolds(self.min_speed)
+        else:
+            re = self.reynolds(self.max_speed)
+        
+        AOA_start = -10
+        AOA_end = 20
+        AOA_step = 0.5
+        # Creates file name
+        polar_file_path = f"Assignment3/{self.airfoil}_{AOA_start}_{AOA_end}_{AOA_step}_{re}.txt"
+
+        # If polar file already exists
+        if os.path.exists(polar_file_path):
+            data = np.loadtxt(polar_file_path, skiprows=12)
+
+        else: # File does not exist, xfoil needs to run
+            # Create input file
+            input_file = open("Assignment3/input.in", 'w')
+            input_file.write(f"{self.airfoil}\n")
+            input_file.write("PANE\n")
+            input_file.write("OPER\n")
+            input_file.write(f"Visc {re}\n")
+            input_file.write("PACC\n")
+            input_file.write(f"{polar_file_path}\n\n")
+            input_file.write("ITER 100\n")
+            input_file.write("ASeq {0} {1} {2}\n".format(AOA_start, AOA_end, AOA_step))
+            input_file.write("\n\n")
+            input_file.write("quit\n")
+            input_file.close()
+        
+            # Run xfoil
+            subprocess.call("Assignment3\\xfoil.exe < Assignment3\\input.in", shell=True)
+
+            # Read data from polar file
+            data = np.loadtxt(polar_file_path, skiprows=12)
+
+        self.alpha = data[:, 0] * np.pi/180 # Angle of attack
+        self.cl = data[:, 1] # Lift coefficient
+        self.cd = data[:, 2] # Friction drag coefficient
+        cdp = data[:, 3]
+            
+        # Save data and calculate slope and intercept of lift curve
+        # Lift curve slope and zero lift angle of attack - Assumes linear lift curve slope and Find stall AOA
+        start = len(self.alpha)//6 # Start point of linear regression
+        self.m0, cl0, self.stall_index = linear_reg_limits(self.alpha, self.cl, start, 5)
+        self.alpha0 = -cl0/self.m0 # Zero lift angle of attack in degrees
+        self.stall_angle = self.alpha[self.stall_index] # Stall angle of attack
+
+
+        if plot:
+            plt.figure()
+            plt.title("Xfoil data")
+            plt.plot(self.alpha * 180/np.pi, self.cl, label="Cl")
+            plt.plot(self.alpha * 180/np.pi, self.cd, label="Cd")
+            plt.plot(self.stall_angle * 180/np.pi, self.cl[self.stall_index], 'ro', label="Stall angle of attack: {:.2f}".format(self.stall_angle * 180/np.pi))
+            plt.xlabel("Angle of attack [deg]")
+            plt.ylabel("Coefficient")
+            plt.legend()
+            plt.grid()
+        
+            plt.figure()
+            plt.title("Xfoil data")
+            plt.plot(self.alpha * 180/np.pi, self.cl / self.cd, label="Cl/Cd")
+            plt.plot(self.stall_angle * 180/np.pi, self.cl[self.stall_index] / self.cd[self.stall_index], 'ro', label="Stall angle of attack: {:.2f}".format(self.stall_angle * 180/np.pi))
+            plt.xlabel("Angle of attack [deg]")
+            plt.ylabel("Coefficient")
+            plt.legend()
+            plt.grid()
+
+    def coefficient_lift(self):
+        '''
+        Calculates the lift coefficient of the wing using lifting line theory
+        '''
+        # get data from xfoil
+        self.xfoil_data()
+        self.CL = np.pi * self.m0 * (self.alpha - self.alpha0) * self.AR / (self.AR * np.pi + self.m0) # Lift coefficient
     
-    def optimal_ClCd(self):
+    def coefficient_drag(self):
+        '''
+        Calculates the drag coefficient of the wing using lifting line theory
+        '''
+        self.coefficient_lift()
+        CDi = 1 / (np.pi * self.AR) * self.CL**2 # Induced drag coefficient
+        self.CD = CDi + self.cd # Total drag coefficient
+
+    def optimal_ClCd(self, plot=False):
         '''
         Finds the optimal Cl/Cd ratio of the wing at min speed and the Cl and Cd values at this angle of attack
         '''
-        self.Re()
+        self.coefficient_drag()
+
+        CLCD = self.CL / self.CD
+
+        self.index_optimal = np.argmax(CLCD)
+        self.CL_optimal = self.CL[self.index_optimal]
+        self.CD_optimal = self.CD[self.index_optimal]
+        self.alpha_optimal = self.alpha[self.index_optimal]
+
+
+        if plot:
+            plt.figure()
+            plt.title("Optimal Cl/Cd")
+            plt.plot(self.alpha * 180/np.pi, self.CL, label="CL")
+            plt.plot(self.alpha * 180/np.pi, self.CD, label="CD")
+            plt.xlabel("Angle of attack [deg]")
+            plt.ylabel("Coefficient")
+            plt.legend()
+            plt.grid()
+
+            plt.figure()
+            plt.title("Optimal Cl/Cd")
+            plt.plot(self.alpha * 180/np.pi, CLCD, label="Cl/Cd")
+            plt.plot(self.alpha_optimal * 180/np.pi, self.CL_optimal / self.CD_optimal, 'ro', label="Optimal Cl/Cd - angle of attack: {:.2f}".format(self.alpha_optimal * 180/np.pi))
+            plt.xlabel("Angle of attack [deg]")
+            plt.ylabel("Coefficient")
+            plt.legend()
+            plt.grid()
 
     def dimensions(self):
         '''
-        Calculates the dimensions of the wing
+        Calculates the dimensions of the wing such that the optimal CD/Cd ratio is achieved at min speed
         '''
-        self.ClCd()
-        self.area = 2 * self.min_lift / (self.min_speed**2 * self.rho * self.Cl) # Wing area
-        self.b = 4 * self.area / (np.pi * self.c0) # Wing span
-        self.AR = 4 * self.b / (np.pi * self.c0) # Aspect ratio
+        self.optimal_ClCd()
+        self.S = 2 * self.min_lift / (self.min_speed**2 * self.rho * self.CL_optimal) # Wing area
+        self.b = np.sqrt(self.AR * self.S) # Wing span
+        self.c0 = 4 * self.S / (np.pi * self.b) # Root chord
 
-    def max_speed_ClCd(self):
+    def maxspeed_ClCd(self, plot=False):
         '''
-        Calculates the Cl and Cd values at max speed
+        Calculates the Cl, aoa an CD of the wing at max speed
         '''
+        self.dimensions()
+        self.CL_max = self.min_lift / (0.5 * self.rho * self.max_speed**2 * self.S) # Lift coefficient
+        self.index_max = np.argmin(np.abs(self.CL - self.CL_max))
+        self.CD_max = self.CD[self.index_max]
+        self.alpha_max = self.alpha[self.index_max]
+
+        if plot:
+            plt.plot(self.alpha_max * 180/np.pi, self.CL[self.index_max] / self.CD[self.index_max], 'ro', label="Max speed Cl/Cd - angle of attack: {:.2f}".format(self.alpha_max * 180/np.pi))
+            plt.legend()
+
+    def CLCD_speed(self, plot=True):
+        '''
+        Calculates the Cl, aoa an CD of the wing at different speeds
+        '''
+        self.dimensions()
+
+        #Initialize arrays
+        speed_ar = np.linspace(self.max_speed, 0.1, 100)
+        self.CL_speed = np.zeros(len(speed_ar))
+        self.CD_speed = np.zeros(len(speed_ar))
+        self.alpha_speed = np.zeros(len(speed_ar))
+
+        for i, speed in enumerate(speed_ar):
+            CL_required = self.min_lift / (0.5 * self.rho * speed**2 * self.S)
+            closest_index = np.argmin(np.abs(self.CL - CL_required))
+            if closest_index < self.stall_index: # Check if stalling
+                self.CL_speed[i] = self.CL[closest_index]
+                self.CD_speed[i] = self.CD[closest_index]
+                self.alpha_speed[i] = self.alpha[closest_index]
+            else:
+                self.CL_speed[i] = self.CL[self.stall_index]
+                self.CD_speed[i] = self.CD[self.stall_index]
+                self.alpha_speed[i] = self.alpha[self.stall_index]
         
+        if plot:
+            plt.figure()
+            plt.title("Cl at different speeds")
+            plt.plot(speed_ar, self.CL_speed, label="CL")
+            plt.xlabel("Speed [m/s]")
+            plt.ylabel("Coefficient")
+            plt.legend()
+            plt.grid()
 
-    def analytical_CDi(self, speed=0):
-        '''
-        Calculates the induced drag of the wing
-        '''
+            plt.figure()
+            plt.title("Cd at different speeds")
+            plt.plot(speed_ar, self.CD_speed, label="CD")
+            plt.xlabel("Speed [m/s]")
+            plt.ylabel("Coefficient")
+            plt.legend()
 
-        self.ClCd()
-        CDi = 1 / (np.pi * self.AR) * self.Cl**2
+            plt.figure()
+            plt.title("Angle of attack at different speeds")
+            plt.plot(speed_ar, self.alpha_speed * 180/np.pi, label="Angle of attack")
+            plt.xlabel("Speed [m/s]")
+            plt.ylabel("Angle of attack [deg]")
+            plt.legend()
+
 
 
 
@@ -298,10 +423,34 @@ class Plane:
         return T
 
 if __name__ == "__main__":
-    if True: # Test
+    if False: # Test
         P1 = Prop(0.01, 0.2, 3, 100, 0.05, 1, "NACA 0012")
         P1.BEMT(2, 20)
         print(P1.CT)
         print(P1.CP)
 
         print("stop")
+
+
+    if False: # Question 4
+        required_lift = 9.82 * 18 # N
+        wing = Wing(min_lift=required_lift, min_speed=11, max_speed=20, aspect_ratio=10)
+        wing.xfoil_data(plot=True)
+        wing.optimal_ClCd(plot=True)
+        wing.maxspeed_ClCd(plot=True)
+        print("optimal angle of attack: {:.2f}".format(wing.alpha_optimal * 180/np.pi))
+        print("optimal Cl/Cd: {:.2f}".format(wing.CL_optimal / wing.CD_optimal))
+        print("optimal Cl: {:.2f}".format(wing.CL_optimal))
+        print("optimal Cd: {:.2f}".format(wing.CD_optimal))
+        print("Max speed angle of attack: {:.2f}".format(wing.alpha_max * 180/np.pi))
+        print("Max speed Cl: {:.2f}".format(wing.CL_max))
+        print("Max speed Cd: {:.2f}".format(wing.CD_max))
+
+        plt.show()
+
+    if True: # Question 5
+        required_lift = 9.82 * 18
+        wing = Wing(min_lift=required_lift, min_speed=11, max_speed=20, aspect_ratio=10)
+        wing.CLCD_speed()
+
+        plt.show()
