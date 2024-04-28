@@ -106,7 +106,6 @@ class Prop:
         T = 2 * self.rho * self.area * self.tip_speed**2
         return T
     
-
     def ideal_power(self):
         '''
         Returns the ideal power of the propeller - Week 9 slide 8
@@ -171,13 +170,14 @@ class Prop:
         
 
 class Wing:
-    def __init__(self, min_lift: float, min_speed: float, max_speed: float, aspect_ratio: float, airfoil = "NACA4415", bodyarea = 0.2, bodyCD = 0.2):
+    def __init__(self, min_lift: float, min_speed: float, max_speed: float, aspect_ratio: float, airfoil = "NACA4415",optimum_speed:float = 15, bodyarea = 0.2, bodyCD = 0.2):
         '''
         min_lift: float, minimum lift of the wing in Kg
         min_speed: float, minimum speed of the wing in m/s
         max_speed: float, maximum speed of the wing in m/s
         aspect_ratio: float, aspect ratio of the wing
         airfoil: str, airfoil of the wing eg. "NACA4415"
+        optimum_speed: float, optimal speed of the wing in m/s
         bodyarea: float, body area in m^2
         bodyCD: float, body drag coefficient
         '''
@@ -187,10 +187,11 @@ class Wing:
         self.AR = aspect_ratio # Aspect ratio
         self.airfoil = airfoil # Airfoil of the wing
         self.rho = 1.225 # Air density [kg/m^3]
+        self.optimum_speed = optimum_speed # Optimal speed in m/s
         self.bodyarea = bodyarea # Body area in m^2
         self.bodyCD = bodyCD # Body drag coefficient
 
-    def reynolds(self, speed: float, c = 0.2): # 
+    def reynolds(self, speed: float, c = 0.6): # 
         '''
         calculates the Reynolds number of the wing
         speed: float, speed of the wing in m/s
@@ -206,10 +207,7 @@ class Wing:
         plot: bool, if True, plots the data
         min_max: bool, if True, gets data for min speed, else gets data for max speed
         '''
-        if min_speed:
-            re = self.reynolds(self.min_speed)
-        else:
-            re = self.reynolds(self.max_speed)
+        re = self.reynolds(self.optimum_speed)
         
         AOA_start = -10
         AOA_end = 20
@@ -324,14 +322,31 @@ class Wing:
             plt.legend()
             plt.grid()
 
-    def dimensions(self):
+    def dimensions(self, plot = False):
         '''
-        Calculates the dimensions of the wing such that the optimal CD/Cd ratio is achieved at min speed
+        Calculates the dimensions of the wing such that the optimal CD/Cd ratio is achieved at the optimum speed
         '''
         self.optimal_ClCd()
-        self.S = 2 * self.min_lift / (self.min_speed**2 * self.rho * self.CL_optimal) # Wing area
+        self.S = 2 * self.min_lift / (self.optimum_speed**2 * self.rho * self.CL_optimal) # Wing area
         self.b = np.sqrt(self.AR * self.S) # Wing span
         self.c0 = 4 * self.S / (np.pi * self.b) # Root chord
+
+        # Check if minimum speed is achievable
+        CL_required = self.min_lift / (0.5 * self.rho * self.min_speed**2 * self.S)
+        if CL_required > self.CL[self.stall_index]:
+            raise ValueError("Minimum speed not achievable")
+
+        if plot: # plot wing shape
+            angles = np.linspace(0, 2*np.pi, 100)
+            x = self.b * np.cos(angles)
+            y = self.c0 * np.sin(angles)
+            plt.figure()
+            plt.plot(x, y)
+            plt.title("Wing shape")
+            plt.xlabel("Span [m]")
+            plt.ylabel("Chord [m]")
+            plt.axis('equal')
+            plt.grid()
 
     def maxspeed_ClCd(self, plot=False):
         '''
@@ -345,6 +360,20 @@ class Wing:
 
         if plot:
             plt.plot(self.alpha_max * 180/np.pi, self.CL[self.index_max] / self.CD[self.index_max], 'ro', label="Max speed Cl/Cd - angle of attack: {:.2f}".format(self.alpha_max * 180/np.pi))
+            plt.legend()
+
+    def minspeed_ClCd(self, plot=False):
+        '''
+        Calculates the Cl, aoa an CD of the wing at min speed
+        '''
+        self.dimensions()
+        self.CL_min = self.min_lift / (0.5 * self.rho * self.min_speed**2 * self.S) # Lift coefficient
+        self.index_min = np.argmin(np.abs(self.CL - self.CL_min))
+        self.CD_min = self.CD[self.index_min]
+        self.alpha_min = self.alpha[self.index_min]
+
+        if plot:
+            plt.plot(self.alpha_min * 180/np.pi, self.CL[self.index_min] / self.CD[self.index_min], 'ro', label="Min speed Cl/Cd - angle of attack: {:.2f}".format(self.alpha_min * 180/np.pi))
             plt.legend()
 
     def CLCD_speed(self, plot=True):
@@ -424,20 +453,20 @@ class Plane:
 
 if __name__ == "__main__":
     if False: # Test
-        P1 = Prop(0.01, 0.2, 3, 100, 0.05, 1, "NACA 0012")
-        P1.BEMT(2, 20)
-        print(P1.CT)
-        print(P1.CP)
+        wing = Wing(min_lift=18, min_speed=11, max_speed=20, aspect_ratio=10, optimum_speed=15)
+        wing.dimensions(plot=True)
+        plt.show()
+        print(wing.c0)
 
         print("stop")
 
 
-    if False: # Question 4
-        required_lift = 9.82 * 18 # N
-        wing = Wing(min_lift=required_lift, min_speed=11, max_speed=20, aspect_ratio=10)
+    if True: # Question 4
+        wing = Wing(min_lift=18, min_speed=11, max_speed=20, aspect_ratio=10)
         wing.xfoil_data(plot=True)
         wing.optimal_ClCd(plot=True)
         wing.maxspeed_ClCd(plot=True)
+        wing.minspeed_ClCd(plot=True)
         print("optimal angle of attack: {:.2f}".format(wing.alpha_optimal * 180/np.pi))
         print("optimal Cl/Cd: {:.2f}".format(wing.CL_optimal / wing.CD_optimal))
         print("optimal Cl: {:.2f}".format(wing.CL_optimal))
@@ -448,9 +477,10 @@ if __name__ == "__main__":
 
         plt.show()
 
-    if True: # Question 5
-        required_lift = 9.82 * 18
-        wing = Wing(min_lift=required_lift, min_speed=11, max_speed=20, aspect_ratio=10)
+        print("stop")
+
+    if False: # Question 5
+        wing = Wing(min_lift=18, min_speed=11, max_speed=20, aspect_ratio=10)
         wing.CLCD_speed()
 
         plt.show()
