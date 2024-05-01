@@ -5,7 +5,6 @@ import subprocess
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
 
-
 def linear_reg_limits(x: np.ndarray, y: np.ndarray, start: int, min_step: int, buffer: float=1):
     '''
     Finds the linear regression of a set of data points and the limits for a valid data set
@@ -135,7 +134,7 @@ class Battery:
             self.power = 600 * self.mass # W
 
 class Prop:
-    def __init__(self, radius: float, inner_radius: float = 0.02, no_blades: int = 2, tip_speed: float = 100, cord: float = 0.02, alpha: float = 2, airfoil: str = "NACA23012")-> None:
+    def __init__(self, radius: float, inner_radius: float = 0.02, no_blades: int = 2, tip_speed: float = 100, cord: float = 0.05, alpha: float = 3, airfoil: str = "NACA23012")-> None:
         '''
         radius: float, radius of the propeller in m
         inner_radius: float, inner radius of the propeller in m
@@ -147,10 +146,12 @@ class Prop:
         '''
         self.radius = radius
         self.inner_radius = inner_radius
+        self.area = np.pi * (self.radius**2 - self.inner_radius**2)
         self.no_blades = no_blades
         self.tip_speed = tip_speed
+        self.omega = self.tip_speed / self.radius
         self.cord = cord
-        self.alpha = alpha
+        self.alpha = np.radians(alpha)
         self.airfoil = airfoil
         self.rho = 1.225 # kg/m^3
 
@@ -180,7 +181,7 @@ class Prop:
         '''
         self.sigma = self.no_blades * self.cord / ( math.pi * self.radius)
 
-    def BEMT(self, twist=0, n_elements=10, tip_loss=True):
+    def BEMT(self, twist=0, n_elements=10, tip_loss=True, plot:bool=False):
         '''
         Calculates the thrust and power of the propeller using the Blade Element Momentum Theory
         twist: int, 0 = constant, 1 = linear, 2 = ideal
@@ -191,16 +192,17 @@ class Prop:
         self.get_clalpha()
 
         # Create arrays for the elements
-        r = np.linspace(self.inner_radius, self.radius, n_elements)
+        dr = (self.radius - self.inner_radius) / n_elements
+        r = np.linspace(self.inner_radius + dr/2 , self.radius - dr/2, n_elements)/self.radius
 
         # Calculate the twist
-        if twist == 0:
-            theta = 1
-        elif twist == 1:
+        if twist == 0: # straight twist
+            theta = self.alpha
+        elif twist == 1: # linear twist
             theta_0 = 0 # Root twist
-            theta_tw = 2
+            theta_tw = self.alpha # Tip twist
             theta = theta_0 + r * theta_tw
-        elif twist == 2:
+        elif twist == 2: # Ideal twist
             theta_tip = self.alpha
             theta = theta_tip / r
         else:
@@ -215,16 +217,30 @@ class Prop:
                 lambda_r = self.sigma * self.clalpha / (16 * F) * (np.sqrt(1 + (32 * F) / (self.sigma * self.clalpha) * theta * r) - 1) # 3.126
                 phi = lambda_r / r
                 f = self.no_blades / 2 * ((1 - r) / (r * phi))
-                F_init = (2 / np.pi) * np.cos(np.exp(-f))**(-1)
+                F_init = (2 / np.pi) * np.arccos(np.exp(-f))
         else:
             lambda_r = self.sigma * self.clalpha / (16) * (np.sqrt(1 + (32) / (self.sigma * self.clalpha) * theta * r) - 1) # 3.126
 
+        if plot:
+            plt.figure()
+            # plt.plot(r, lambda_r, label="Lambda")
+            plt.plot(r, F, label="F")
+            plt.xlabel("Radius [m]")
+            plt.ylabel("Lambda")
+            plt.legend()
+            plt.grid()
+
         # Calculate the thrust and power
-        self.CT = 4 * np.sum(lambda_r**2 * r) # Lidt et skud i tågen
-        self.CP = 4 * np.sum(lambda_r**3 * r) # Lidt et skud i tågen        
+        dct = 4 * F * lambda_r**2 * r
+        dcp = dct * lambda_r * self.omega**2
+        self.CT_hover = np.sum(dct)
+        self.CP_hover = np.sum(dcp)
+        self.hover_thrust = self.CT_hover * self.rho * self.tip_speed**2 * self.area
+        self.hover_power = self.CP_hover * self.rho * self.tip_speed**3 * self.area
+        # self.CP = np.sum(dcp)
 
 class Wing:
-    def __init__(self, min_lift: float, min_speed: float = 11, max_speed: float = 22, aspect_ratio: float = 10, airfoil = "NACA4415",optimum_speed:float = 18):
+    def __init__(self, min_lift:float = 18, min_speed:float = 11, max_speed:float = 22, aspect_ratio:float = 10, airfoil:str="NACA4415",optimum_speed:float = 16):
         '''
         min_lift: float, minimum lift of the wing in Kg
         min_speed: float, minimum speed of the wing in m/s
@@ -243,7 +259,7 @@ class Wing:
         self.rho = 1.225 # Air density [kg/m^3]
         self.optimum_speed = optimum_speed # Optimal speed in m/s
 
-    def reynolds(self, speed: float, c = 0.6): # 
+    def reynolds(self, speed: float, c = 0.5): # 
         '''
         calculates the Reynolds number of the wing
         speed: float, speed of the wing in m/s
@@ -559,22 +575,56 @@ class Plane:
             plt.legend()
             plt.grid()
 
-
     def power(self):
         pass
 
 if __name__ == "__main__":
-    if True: # Test
+    if False: # Test
+        prop = Prop(0.3, alpha=4)
+        prop.BEMT(twist=0)
+        print(prop.hover_power)
+        print(prop.hover_thrust)
+        prop.BEMT(twist=1)
+        print(prop.hover_power)
+        print(prop.hover_thrust)
+        prop.BEMT(twist=2)
+        print(prop.hover_power)
+        print(prop.hover_thrust)
+
+    if False: # Test
         plane = Plane()
         plane.fixed_aoa(plot=True)
 
         plt.show()
+
+    if True: # Question 1
+        kappa = [0.6, 0.8, 1, 1.2, 1.4]
+        R = np.linspace(0.2, 3, 100)
+        T = 177/2 # N
+        rho = 1.225 # kg/m^3
+        N_blades = 2
+        V_tip = 100 # m/s
+        c = 0.05 # m
+        Cd = 0.05
+
+        plt.figure()
+        for k in kappa:
+            P = k * T**(3/2) / (np.sqrt(2 * np.pi * rho) * R) + (rho * N_blades * c * Cd * V_tip**3) / 8
+            plt.plot(R, P, label=f"kappa = {k}")        
+        plt.plot(R, P)
+        plt.xlabel("Radius [m]")
+        plt.ylabel("Power [W]")
+        plt.grid()
+        plt.legend()
+        plt.show()
+
+
+
     if False: # Question 3
         pass
 
-
     if False: # Question 4
-        wing = Wing(min_lift=18, min_speed=11, max_speed=20, aspect_ratio=10)
+        wing = Wing()
         wing.xfoil_data(plot=True)
         wing.optimal_ClCd(plot=True)
         wing.maxspeed_ClCd(plot=True)
@@ -593,6 +643,6 @@ if __name__ == "__main__":
 
     if False: # Question 5
         wing = Wing(min_lift=18, min_speed=11, max_speed=20, aspect_ratio=10)
-        wing.CLCD_speed()
+        wing.CLCD_speed(plot=True)
 
         plt.show()
