@@ -5,7 +5,7 @@ import subprocess
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
 
-def linear_reg_limits(x: np.ndarray, y: np.ndarray, start: int, min_step: int, buffer: float=1):
+def linear_reg_limits(x: np.ndarray, y: np.ndarray, start: int, min_step: int, buffer: float=5):
     '''
     Finds the linear regression of a set of data points and the limits for a valid data set
     x: 1D array of x values
@@ -24,7 +24,7 @@ def linear_reg_limits(x: np.ndarray, y: np.ndarray, start: int, min_step: int, b
     i = 1
     r_square = 1
 
-    while r_square > 0.99:
+    while r_square > 0.95:
         x_data = x[start:start+min_step+i]
         y_data = y[start:start+min_step+i]
         slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data) 
@@ -41,7 +41,7 @@ def linear_reg_limits(x: np.ndarray, y: np.ndarray, start: int, min_step: int, b
 
     return slope, intercept, max_step
 
-def xfoil(re: float, airfoil: str, AOA_start: float=-10, AOA_end: float=20, AOA_step: float=0.1):
+def xfoil(re: float, airfoil: str, AOA_start: float=-10, AOA_end: float=20, AOA_step: float=0.1, plot=False):
     '''
     Runs xfoil to get foil data
     re: float, Reynolds number
@@ -92,10 +92,22 @@ def xfoil(re: float, airfoil: str, AOA_start: float=-10, AOA_end: float=20, AOA_
 
     # Save data and calculate slope and intercept of lift curve
     # Lift curve slope and zero lift angle of attack - Assumes linear lift curve slope and Find stall AOA
-    start = len(alpha)//6 # Start point of linear regression
-    m0, cl0, stall_index = linear_reg_limits(alpha, cl, start, 5)
+    start = len(alpha)//8 # Start point of linear regression
+    m0, cl0, stall_index = linear_reg_limits(alpha, cl, start, 10)
     alpha0 = -cl0/m0 # Zero lift angle of attack in degrees
     
+    if plot:
+        plt.figure()
+        plt.plot(alpha * 180/np.pi, cl, label="Cl")
+        plt.plot(alpha[stall_index] * 180/np.pi, cl[stall_index], 'ro', label="Stall angle of attack: {:.2f}".format(alpha[stall_index] * 180/np.pi))
+        plt.plot(alpha0 * 180/np.pi, 0, 'go', label="Zero lift angle of attack: {:.2f}".format(alpha0 * 180/np.pi))
+        plt.plot(alpha * 180/np.pi, m0 * alpha + cl0, 'k--', label="Linear regression")
+        plt.xlabel("Angle of attack [deg]")
+        plt.ylabel("Coefficient")
+        plt.legend()
+        plt.grid()
+        plt.show()
+
     return alpha, cl, cdf, m0, alpha0, stall_index
 
 class Battery:
@@ -134,7 +146,7 @@ class Battery:
             self.power = 600 * self.mass # W
 
 class Prop:
-    def __init__(self, radius: float, inner_radius: float = 0.02, no_blades: int = 2, tip_speed: float = 100, cord: float = 0.05, alpha: float = 3, airfoil: str = "NACA23012")-> None:
+    def __init__(self, radius:float=0.6, no_blades: int = 2, tip_speed: float = 100, cord: float = 0.1, twist:int=0, airfoil: str = "NACA23012")-> None:
         '''
         radius: float, radius of the propeller in m
         inner_radius: float, inner radius of the propeller in m
@@ -145,15 +157,16 @@ class Prop:
         airfoil: str, airfoil used on the propeller
         '''
         self.radius = radius
-        self.inner_radius = inner_radius
-        self.area = np.pi * (self.radius**2 - self.inner_radius**2)
+        self.area = np.pi * (self.radius**2)
         self.no_blades = no_blades
         self.tip_speed = tip_speed
         self.omega = self.tip_speed / self.radius
         self.cord = cord
-        self.alpha = np.radians(alpha)
+        self.twist = twist
         self.airfoil = airfoil
         self.rho = 1.225 # kg/m^3
+
+        self.tip_loss = True
 
     def ideal_thrust(self):
         '''
@@ -169,11 +182,15 @@ class Prop:
         P = 2 * self.rho * self.area * self.tip_speed**3
         return P
 
-    def get_clalpha(self):
+    def get_clalpha(self, plot=True):
         '''
         Returns the lift coefficient of the propeller
         '''
-        self.clalpha = 2 * math.pi # Lift coefficient approx  --  Ved ikke med Reynolds tal
+        v = 1.5e-5 # Dynamic viscosity of air [m^2/s]
+        re = (self.tip_speed) * self.cord / v # Reynolds number
+
+        # Run xfoil
+        alpha, cl, cd, self.clalpha, alpha0, stall_index = xfoil(re=re, airfoil=self.airfoil, AOA_start=-7, AOA_end=20, AOA_step=0.1)
     
     def solidity(self):
         '''
@@ -181,63 +198,100 @@ class Prop:
         '''
         self.sigma = self.no_blades * self.cord / ( math.pi * self.radius)
 
-    def BEMT(self, twist=0, n_elements=10, tip_loss=True, plot:bool=False):
+    def BEMT(self,inflow:float=0, n_elements=10000, thrust:float=9*9.82, plot:bool=False, max_iter:int=100000):
         '''
         Calculates the thrust and power of the propeller using the Blade Element Momentum Theory
         twist: int, 0 = constant, 1 = linear, 2 = ideal
         n_elements: int, number of elements to divide the propeller into
         tip_loss: bool, if True, tip loss is accounted for
         '''
-        self.solidity()
-        self.get_clalpha()
+        self.solidity() # Get sigma
+        self.get_clalpha() # Get clalpha
+
+        # Calculate the CT
+        Ct = thrust / (self.rho * self.tip_speed**2 * self.area)
 
         # Create arrays for the elements
-        dr = (self.radius - self.inner_radius) / n_elements
-        r = np.linspace(self.inner_radius + dr/2 , self.radius - dr/2, n_elements)/self.radius
+        r = np.linspace(1/n_elements , 1-1/n_elements, n_elements)
+
+        # Calculate the theta_tip
+        theta_tip = 4 * Ct / (self.sigma * self.clalpha) + np.sqrt(Ct/2) # 3.84
+        print(theta_tip)
 
         # Calculate the twist
-        if twist == 0: # straight twist
-            theta = self.alpha
-        elif twist == 1: # linear twist
-            theta_0 = 0 # Root twist
-            theta_tw = self.alpha # Tip twist
-            theta = theta_0 + r * theta_tw
-        elif twist == 2: # Ideal twist
-            theta_tip = self.alpha
+        if self.twist == 0: # straight twist
+            theta = np.ones(n_elements) * 6 * Ct / (self.sigma * self.clalpha) + 3/2 * np.sqrt(Ct/2) # 3.24
+        elif self.twist == 1: # linear twist
+            theta = r * (-theta_tip) + 2 * theta_tip # Figure 3.6
+        elif self.twist == 2: # Ideal twist
             theta = theta_tip / r
         else:
             raise ValueError("Invalid twist value")
     
         # Calculate lambda
-        if tip_loss:
-            F_init = 1
-            F = 0
-            while np.abs(np.max(np.abs(F_init) - np.abs(F))) > 0.0001:
-                F = F_init
-                lambda_r = self.sigma * self.clalpha / (16 * F) * (np.sqrt(1 + (32 * F) / (self.sigma * self.clalpha) * theta * r) - 1) # 3.126
-                phi = lambda_r / r
+        if self.tip_loss:
+            lam_init = np.ones(n_elements)
+            for i in range(max_iter):
+                lam = lam_init
+                phi = lam / r
+
                 f = self.no_blades / 2 * ((1 - r) / (r * phi))
-                F_init = (2 / np.pi) * np.arccos(np.exp(-f))
+                F = (2 / np.pi) * np.arccos(np.exp(-f))
+
+                lam_init = ((self.sigma * self.clalpha) / (16 * F)) * (np.sqrt(1 + (32 * F) / (self.sigma * self.clalpha) * theta * r) - 1) # 3.126
+
+                if np.abs(np.max(np.abs(lam_init) - np.abs(lam))) < 1e-8:
+                    lam = lam_init
+                    break
         else:
-            lambda_r = self.sigma * self.clalpha / (16) * (np.sqrt(1 + (32) / (self.sigma * self.clalpha) * theta * r) - 1) # 3.126
+            lam = self.sigma * self.clalpha / (16) * (np.sqrt(1 + (32) / (self.sigma * self.clalpha) * theta * r) - 1) # 3.126
+
+        self.lam = lam
+
+        V_c = inflow / (self.omega * self.radius)
+
+        self.CT = np.sum(4 * (V_c + self.lam)**2 * r * 1/n_elements) # 3.9
+        self.CP = np.sum(4 * (V_c + self.lam)**3 * r * 1/n_elements) # 3.9
+
+        self.thrust = self.CT * self.rho * self.tip_speed**2 * self.area
+        self.power = self.CP * self.rho * self.tip_speed**3 * self.area
+
 
         if plot:
             plt.figure()
-            # plt.plot(r, lambda_r, label="Lambda")
-            plt.plot(r, F, label="F")
-            plt.xlabel("Radius [m]")
+            plt.plot(r, F, label="Twist: {}".format(self.twist))
+            plt.xlabel("Radius")
+            plt.ylabel("F")
+            plt.legend()
+            plt.grid()
+
+            plt.figure()
+            plt.plot(r, self.lam, label="Twist: {}".format(self.twist))
+            plt.xlabel("Radius")
             plt.ylabel("Lambda")
             plt.legend()
             plt.grid()
 
-        # Calculate the thrust and power
-        dct = 4 * F * lambda_r**2 * r
-        dcp = dct * lambda_r * self.omega**2
-        self.CT_hover = np.sum(dct)
-        self.CP_hover = np.sum(dcp)
-        self.hover_thrust = self.CT_hover * self.rho * self.tip_speed**2 * self.area
-        self.hover_power = self.CP_hover * self.rho * self.tip_speed**3 * self.area
-        # self.CP = np.sum(dcp)
+    def hover(self, force):
+        '''
+        Calculates the thrust and power of the propeller in hover with the given force
+        force: float, force in N
+        outputs:
+        thrust: float, thrust of the propeller in N
+        power: float, power of the propeller in W
+        '''
+        self.BEMT(thrust=force)
+
+        return self.thrust, self.power
+    
+    def forward_flight(self, force, speed: float):
+        '''
+        Calculates the thrust and power of the propeller in forward flight
+        '''
+        self.BEMT(inflow=speed, thrust=force)
+
+        return self.thrust, self.power
+
 
 class Wing:
     def __init__(self, min_lift:float = 18, min_speed:float = 11, max_speed:float = 22, aspect_ratio:float = 10, airfoil:str="NACA4415",optimum_speed:float = 16):
@@ -323,6 +377,35 @@ class Wing:
         CDi = 1 / (np.pi * self.AR) * self.CL**2 # Induced drag coefficient
         self.CD = CDi + self.cd # Total drag coefficient
 
+    def stall_dim(self, plot:bool=False):
+        '''
+        Calculates the dimensions from the stall angle of attack and minimum speed
+        '''
+        self.xfoil_data()
+        self.coefficient_lift()
+
+        CL_max = self.CL[self.stall_index]
+        S = 2 * self.min_lift / (self.min_speed**2 * self.rho * CL_max) # Wing area
+        b = np.sqrt(self.AR * S) # Wing span
+        c0 = 4 * S / (np.pi * b) # Root chord
+
+        if plot: # plot wing shape
+            angles = np.linspace(0, 2*np.pi, 100)
+            x = b/2 * np.cos(angles)
+            y = c0/2 * np.sin(angles)
+            plt.figure()
+            plt.plot(x, y)
+            plt.title("Wing shape")
+            plt.xlabel("Span [m]")
+            plt.ylabel("Chord [m]")
+            plt.axis('equal')
+            plt.grid()
+
+            # np.savetxt("Assignment3/stall_dim.txt", np.array([x, y]).T)
+
+        return S, b, c0
+
+
     def optimal_ClCd(self, plot=False):
         '''
         Finds the optimal Cl/Cd ratio of the wing at min speed and the Cl and Cd values at this angle of attack
@@ -356,6 +439,9 @@ class Wing:
             plt.legend()
             plt.grid()
 
+            # np.savetxt(f"Assignment3/optimal_clcd{self.AR}.txt", np.array([self.alpha*180/np.pi, CLCD]).T)
+            np.savetxt("Assignment3/optimal_clcdpoint.txt", np.array([self.alpha_optimal*180/np.pi, self.CL_optimal/self.CD_optimal]))
+
     def dimensions(self, plot = False):
         '''
         Calculates the dimensions of the wing such that the optimal CD/Cd ratio is achieved at the optimum speed
@@ -372,8 +458,8 @@ class Wing:
 
         if plot: # plot wing shape
             angles = np.linspace(0, 2*np.pi, 100)
-            x = self.b * np.cos(angles)
-            y = self.c0 * np.sin(angles)
+            x = self.b/2 * np.cos(angles)
+            y = self.c0/2 * np.sin(angles)
             plt.figure()
             plt.plot(x, y)
             plt.title("Wing shape")
@@ -381,6 +467,8 @@ class Wing:
             plt.ylabel("Chord [m]")
             plt.axis('equal')
             plt.grid()
+
+            np.savetxt("Assignment3/dimensions.txt", np.array([x, y]).T)
 
     def maxspeed_ClCd(self, plot=False):
         '''
@@ -396,6 +484,8 @@ class Wing:
             plt.plot(self.alpha_max * 180/np.pi, self.CL[self.index_max] / self.CD[self.index_max], 'ro', label="Max speed Cl/Cd - angle of attack: {:.2f}".format(self.alpha_max * 180/np.pi))
             plt.legend()
 
+            np.savetxt("Assignment3/maxspeed_clcd.txt", np.array([self.alpha_max*180/np.pi, self.CL[self.index_max]/self.CD[self.index_max]]))
+
     def minspeed_ClCd(self, plot=False):
         '''
         Calculates the Cl, aoa an CD of the wing at min speed
@@ -409,6 +499,8 @@ class Wing:
         if plot:
             plt.plot(self.alpha_min * 180/np.pi, self.CL[self.index_min] / self.CD[self.index_min], 'ro', label="Min speed Cl/Cd - angle of attack: {:.2f}".format(self.alpha_min * 180/np.pi))
             plt.legend()
+
+            np.savetxt("Assignment3/minspeed_clcd.txt", np.array([self.alpha_min*180/np.pi, self.CL[self.index_min]/self.CD[self.index_min]]))
 
     def CLCD_speed(self, plot=False, speed: np.ndarray = None):
         '''
@@ -580,16 +672,14 @@ class Plane:
 
 if __name__ == "__main__":
     if False: # Test
-        prop = Prop(0.3, alpha=4)
-        prop.BEMT(twist=0)
-        print(prop.hover_power)
-        print(prop.hover_thrust)
-        prop.BEMT(twist=1)
-        print(prop.hover_power)
-        print(prop.hover_thrust)
-        prop.BEMT(twist=2)
-        print(prop.hover_power)
-        print(prop.hover_thrust)
+        prop = Prop(twist=2)
+        prop.BEMT(inflow=10, thrust = 1 ,plot=True)
+        print(1)
+        print("CT: {:.6f}".format(prop.CT))
+        print("CP: {:.6f}".format(prop.CP))
+        print("Thrust: {:.6f}".format(prop.thrust))
+        print("Power: {:.6f}".format(prop.power))
+        plt.show()
 
     if False: # Test
         plane = Plane()
@@ -597,7 +687,7 @@ if __name__ == "__main__":
 
         plt.show()
 
-    if True: # Question 1
+    if False: # Question 1
         kappa = [0.6, 0.8, 1, 1.2, 1.4]
         R = np.linspace(0.2, 3, 100)
         T = 177/2 # N
@@ -621,21 +711,44 @@ if __name__ == "__main__":
 
 
     if False: # Question 3
-        pass
+        props = [Prop(twist=0), Prop(twist=1), Prop(twist=2)]
 
-    if False: # Question 4
-        wing = Wing()
-        wing.xfoil_data(plot=True)
-        wing.optimal_ClCd(plot=True)
-        wing.maxspeed_ClCd(plot=True)
-        wing.minspeed_ClCd(plot=True)
-        print("optimal angle of attack: {:.2f}".format(wing.alpha_optimal * 180/np.pi))
-        print("optimal Cl/Cd: {:.2f}".format(wing.CL_optimal / wing.CD_optimal))
-        print("optimal Cl: {:.2f}".format(wing.CL_optimal))
-        print("optimal Cd: {:.2f}".format(wing.CD_optimal))
-        print("Max speed angle of attack: {:.2f}".format(wing.alpha_max * 180/np.pi))
-        print("Max speed Cl: {:.2f}".format(wing.CL_max))
-        print("Max speed Cd: {:.2f}".format(wing.CD_max))
+        Thrust = np.linspace(9*9.8, 12*9.8, 100)
+        thrust = np.zeros(len(Thrust))
+        power = np.zeros(len(Thrust))
+        plt.figure()
+        for i, prop in enumerate(props):
+            for j, force in enumerate(Thrust):
+                thrust[j], power[j] = prop.hover(force)
+            plt.plot(Thrust, power, label=f"Twist: {i}")
+        plt.xlabel("Thrust [N]")
+        plt.ylabel("Power [W]")
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+    if True: # Question 4
+        if False: # Hurtige måde
+            wing = Wing()
+            print(wing.stall_dim(plot=True))
+
+        else:
+            wing = Wing(aspect_ratio=10)
+            wing.xfoil_data(plot=False)
+            wing.optimal_ClCd(plot=True)
+            wing.maxspeed_ClCd(plot=True)
+            wing.minspeed_ClCd(plot=True)
+            print("optimal angle of attack: {:.6f}".format(wing.alpha_optimal * 180/np.pi))
+            print("optimal Cl/Cd: {:.6f}".format(wing.CL_optimal / wing.CD_optimal))
+            print("optimal Cl: {:.6f}".format(wing.CL_optimal))
+            print("optimal Cd: {:.6f}".format(wing.CD_optimal))
+            print("Max speed angle of attack: {:.2f}".format(wing.alpha_max * 180/np.pi))
+            print("Max speed Cl: {:.6f}".format(wing.CL_max))
+            print("Max speed Cd: {:.6f}".format(wing.CD_max))
+            wing.dimensions(plot=True)
+            print(wing.S)
+            print(wing.b)
+            print(wing.c0)
 
         plt.show()
 
