@@ -111,8 +111,6 @@ def xfoil(re: float, airfoil: str, AOA_start: float=-10, AOA_end: float=20, AOA_
     return alpha, cl, cdf, m0, alpha0, stall_index
 
 
-
-
 class Battery:
     def __init__(self, mass = None, energy = None, power = None):
         '''
@@ -345,7 +343,6 @@ class Prop:
 
         return self.thrust, self.power
     
-
 
 class Wing:
     def __init__(self, min_lift:float = 18, min_speed:float = 11, max_speed:float = 22, aspect_ratio:float = 10, airfoil:str="NACA4415",optimum_speed:float = 16):
@@ -742,38 +739,6 @@ class Plane:
 
         center_power[np.isnan(center_power).argmax():] = 0
 
-
-        # # Calculate the power required
-        # tip_v_h = np.sqrt(total_drag/(2*self.wing.rho*self.tip_rotor.area))
-        # tip_v_i = 1
-
-        # center_v_h = np.sqrt(required_thrust/(2*self.wing.rho*self.center_rotor.area))
-        # center_v_i = 1
-
-        # for i in range(1,10000):
-        #     tip_v_i_before = tip_v_i
-        #     tip_v_i = tip_v_h**2/(np.sqrt(self.speed**2 + tip_v_i**2))
-
-        #     if np.max(np.abs(tip_v_i - tip_v_i_before)) < 1e-5:
-        #         print(f"tip_v_i converged after {i} iterations")
-        #         break
-
-        # for i in range(1,10000):
-        #     center_v_i_before = center_v_i
-        #     center_v_i = center_v_h**2/center_v_i
-
-        #     if np.max(np.abs(center_v_i - center_v_i_before)) < 1e-5:
-        #         print(f"center_v_i converged after {i} iterations")
-        #         break
-
-        # tip_P_ideal = (self.speed + tip_v_i)/tip_v_h * total_drag*tip_v_h
-        # tip_kappa = (2*(self.tip_rotor.no_blades+1)**(3/2)) / ((3*self.tip_rotor.no_blades+2) +2)
-        # tip_P = tip_kappa*tip_P_ideal + 1/8 * self.wing.rho*self.tip_rotor.no_blades*self.tip_rotor.cord*self.tip_rotor.cd
-
-        # center_P_ideal = (center_v_i) / center_v_h * required_thrust * center_v_h
-        # center_kappa = (2*(self.center_rotor.no_blades+1)**(3/2)) / ((3*self.center_rotor.no_blades+2) +2)
-        # center_P = center_kappa*center_P_ideal + 1/8 * self.wing.rho*self.center_rotor.no_blades*self.center_rotor.cord*self.center_rotor.cd
-        
         Power = center_power + tip_power
 
         if plot:
@@ -877,31 +842,20 @@ class Plane:
             plt.legend()
             plt.grid()
 
-            np.savetxt(f"Assignment3/Xforces{self.wing.optimum_speed}.txt", np.array([self.speed, x_force]).T)
-            np.savetxt(f"Assignment3/Yforces{self.wing.optimum_speed}.txt", np.array([self.speed, y_force]).T)
-            np.savetxt(f"Assignment3/force{self.wing.optimum_speed}.txt", np.array([self.speed, force]).T)
+            # np.savetxt(f"Assignment3/Xforces{self.wing.optimum_speed}.txt", np.array([self.speed, x_force]).T)
+            # np.savetxt(f"Assignment3/Yforces{self.wing.optimum_speed}.txt", np.array([self.speed, y_force]).T)
+            # np.savetxt(f"Assignment3/force{self.wing.optimum_speed}.txt", np.array([self.speed, force]).T)
 
             np.savetxt(f"Assignment3/alpha{self.wing.optimum_speed}.txt", np.array([self.speed, alpha * 180/np.pi]).T)
             np.savetxt(f"Assignment3/power{self.wing.optimum_speed}.txt", np.array([self.speed, power]).T)
+
+            np.savetxt(f"Assignment3/alpha{self.wing.optimum_speed}special.txt", np.array([self.speed, alpha * 180/np.pi]).T)
+            np.savetxt(f"Assignment3/power{self.wing.optimum_speed}special.txt", np.array([self.speed, power]).T)
 
     def power(self):
         pass
 
 if __name__ == "__main__":
-    if False: # Test
-        prop = Prop(radius=0.3, twist=2)
-        print(prop.thrust_power(force=21, inflow=22))
-
-    if False: # Test
-        prop = Prop(radius=0.3, twist=0)
-        prop.general_BEMT(required_thrust=22, inflow=10)
-
-    if False: # Test
-        plane = Plane()
-        plane.fixed_aoa(plot=True)
-
-        plt.show()
-
     if False: # Question 1
         kappa = [0.6, 0.8, 1, 1.2, 1.4]
         R = np.linspace(0.2, 3, 100)
@@ -975,7 +929,7 @@ if __name__ == "__main__":
 
         print("stop")
 
-    if True: # Question 5
+    if False: # Question 5
         plane = Plane()
         plane.wing.CLCD_speed(plot=True)
         plane.drag_force(plot=True)
@@ -984,12 +938,12 @@ if __name__ == "__main__":
         plane.variable_aoa(plot=True)
         plt.show()
     
-    if False: # Question 6
-        wing = Wing(optimum_speed=16)
+    if True : # Question 6
+        wing = Wing(optimum_speed=26)
         wing.optimal_ClCd(plot=False)
         wing.maxspeed_ClCd()
         plane = Plane(wing=wing)
-        plane.fixed_aoa(plot=True, alpha=wing.alpha_max*180/np.pi)
-        print(wing.alpha_max*180/np.pi)
+        plane.fixed_aoa(plot=True, alpha=0.9)
+        print(wing.optimum_speed, wing.alpha_max*180/np.pi)
 
         plt.show()
