@@ -194,12 +194,59 @@ class Prop:
 
         # Run xfoil
         alpha, cl, cd, self.clalpha, alpha0, stall_index = xfoil(re=re, airfoil=self.airfoil, AOA_start=-7, AOA_end=20, AOA_step=0.1)
-    
+        self.cd = cd[len(cd)//2]
+
     def solidity(self):
         '''
         Returns the solidity of the propeller
         '''
         self.sigma = self.no_blades * self.cord / ( math.pi * self.radius)
+    
+    def general_BEMT(self, required_thrust:float, inflow:float=0, n_elements=100, max_iter:int=1000, plot:bool=False):
+
+        self.solidity()
+        self.get_clalpha()
+
+        # Initialize arrays
+        theta_tip = np.linspace(0.001, 1, 100)
+        thrust = np.zeros(len(theta_tip))
+        power = np.zeros(len(theta_tip))
+        r = np.linspace(1/n_elements , 1-1/n_elements, n_elements)
+
+        # calculate the twist
+        if self.twist == 0: # straight twist
+            theta_ = theta_tip
+        elif self.twist == 1: # linear twist
+            theta_ = (r*theta_tip) + 2 * theta_tip
+        elif self.twist == 2: # Ideal twist
+            theta_ = theta_tip / r
+        else:
+            raise ValueError("Invalid twist value")
+    
+        # Calculate lambda
+        for n, theta in enumerate(theta_):
+            lam_init = np.ones(n_elements)
+            for i in range(max_iter):
+                lam = lam_init
+                phi = lam / r
+                print(theta)
+                f = self.no_blades / 2 * ((1 - r) / (r * phi))
+                F = (2 / np.pi) * np.arccos(np.exp(-f))
+
+                lam_init = ((self.sigma * self.clalpha) / (16 * F)) * (np.sqrt(1 + (32 * F) / (self.sigma * self.clalpha) * theta * r) - 1) + inflow / self.omega
+
+                if np.abs(np.max(np.abs(lam_init) - np.abs(lam))) < 1e-8:
+                    lam = lam_init
+                    break
+            CT = np.sum(4 * (lam)**2 * r * 1/n_elements) # 3.9
+            CP = np.sum(4 * (lam)**3 * r * 1/n_elements) # 3.9
+
+            thrust[n] = CT * self.rho * self.tip_speed**2 * self.area
+            power[n] = CP * self.rho * self.tip_speed**3 * self.area
+        
+        index = np.argmin(abs(thrust - required_thrust))
+        print(thrust[index], power[index], theta_tip[index])
+
 
     def BEMT(self, correction:float = 0, inflow:float=0, n_elements=10, thrust:float=9*9.82, plot:bool=False, max_iter:int=100000):
         '''
@@ -580,12 +627,12 @@ class Plane:
             self.wing = wing
 
         # Estimate of the body specifications
-        self.body_area = self.center_rotor.radius * 2 + self.tip_rotor.radius * 0.5 * 0.1 # m
+        self.body_area = (self.center_rotor.radius * 2 + self.center_rotor.radius * 0.5) * 0.1 # m
         self.body_CD = 0.2 # Drag coefficient
 
     def speed_arr(self):
         # Create speed array
-        self.speed = np.linspace(0.01, 22, 100)
+        self.speed = np.linspace(0.05, 22, 100)
 
     def drag_force(self, plot=False):
         '''
@@ -604,14 +651,14 @@ class Plane:
         body_drag = 0.5 * self.wing.rho * self.speed**2 * self.body_area * self.body_CD
 
         # Total drag force
-        total_drag = wing_drag + body_drag
+        self.total_drag = wing_drag + body_drag
 
         if plot:
             plt.figure()
             plt.title("Drag force")
             plt.plot(self.speed, wing_drag, label="Wing drag")
             plt.plot(self.speed, body_drag, label="Body drag")
-            plt.plot(self.speed, total_drag, label="Total drag")
+            plt.plot(self.speed, self.total_drag, label="Total drag")
             plt.xlabel("Speed [m/s]")
             plt.ylabel("Force [N]")
             plt.legend()
@@ -619,7 +666,7 @@ class Plane:
 
             np.savetxt(f"Assignment3/Wing_drag{self.wing.AR}.txt", np.array([self.speed, wing_drag]).T)
             np.savetxt(f"Assignment3/Body_drag{self.wing.AR}.txt", np.array([self.speed, body_drag]).T)
-            np.savetxt(f"Assignment3/Total_drag{self.wing.AR}.txt", np.array([self.speed, total_drag]).T)
+            np.savetxt(f"Assignment3/Total_drag{self.wing.AR}.txt", np.array([self.speed, self.total_drag]).T)
 
     def lift_force(self, plot=False):
         '''
@@ -654,28 +701,95 @@ class Plane:
         '''
         Calculates the forces in x,y direction for a variable angle of attack
         '''
+        self.tip_rotor.get_clalpha()
+        self.center_rotor.get_clalpha()
         self.drag_force()
         self.lift_force()
+        self.speed_arr()
 
-        # Calculate the power required
-        Power_center = np.zeros(len(self.speed))
-        Power_tip = np.zeros(len(self.speed))
-        for i, speed in enumerate(self.speed):
-            Power_center[i] = self.center_rotor.thrust_power(force=self.required_thrust[i], inflow=0)
-            Power_tip[i] = self.tip_rotor.thrust_power(force=self.required_thrust[i], inflow=0)
+
+        # tip rotors
+        force = self.total_drag
+        power = np.zeros(len(force))
+        v_i = np.ones(len(self.speed))
+        alpha = np.pi/2
+        for i, v_inf in enumerate(self.speed):
+            for n in range(10000000):
+                v_h2 = (force[i]/2)/(2 * self.wing.rho * self.center_rotor.area)
+                v_i_init = v_h2 / np.sqrt((v_inf * np.cos(alpha))**2 + (v_inf * np.sin(alpha) + v_i[i])**2)
+                if np.abs(v_i_init - v_i[i]) < 1e-4:
+                    power[i] = ((force[i]/2) * v_inf * np.sin(alpha) + (force[i]/2) * v_i[i])*2
+                    break
+                if n == 999999:
+                    raise ValueError("Did not converge")
+                v_i[i] = v_i_init
+
+        kappa = (2*(self.tip_rotor.no_blades+1)**(3/2)) / ((3*self.tip_rotor.no_blades+2) +2)
+        power = kappa*power + 1/8 * self.wing.rho*self.tip_rotor.no_blades*self.tip_rotor.cord*self.tip_rotor.cd
+
+        tip_power = power*2
+
+
+        # center rotors
+        force = self.required_thrust/2
+        P_ideal = force**(3/2)/(np.sqrt(2*self.wing.rho*self.center_rotor.area))
+        P_0 = 1/8 * self.wing.rho*self.center_rotor.no_blades*self.center_rotor.omega**3*self.center_rotor.cord*self.center_rotor.cd*self.center_rotor.radius**4
+        kappa = (2*(self.center_rotor.no_blades+1)**(3/2)) / ((3*self.center_rotor.no_blades+2) +2)  
+
+        power = kappa*P_ideal + P_0
+
+        center_power = power*2
+
+        center_power[np.isnan(center_power).argmax():] = 0
+
+
+        # # Calculate the power required
+        # tip_v_h = np.sqrt(total_drag/(2*self.wing.rho*self.tip_rotor.area))
+        # tip_v_i = 1
+
+        # center_v_h = np.sqrt(required_thrust/(2*self.wing.rho*self.center_rotor.area))
+        # center_v_i = 1
+
+        # for i in range(1,10000):
+        #     tip_v_i_before = tip_v_i
+        #     tip_v_i = tip_v_h**2/(np.sqrt(self.speed**2 + tip_v_i**2))
+
+        #     if np.max(np.abs(tip_v_i - tip_v_i_before)) < 1e-5:
+        #         print(f"tip_v_i converged after {i} iterations")
+        #         break
+
+        # for i in range(1,10000):
+        #     center_v_i_before = center_v_i
+        #     center_v_i = center_v_h**2/center_v_i
+
+        #     if np.max(np.abs(center_v_i - center_v_i_before)) < 1e-5:
+        #         print(f"center_v_i converged after {i} iterations")
+        #         break
+
+        # tip_P_ideal = (self.speed + tip_v_i)/tip_v_h * total_drag*tip_v_h
+        # tip_kappa = (2*(self.tip_rotor.no_blades+1)**(3/2)) / ((3*self.tip_rotor.no_blades+2) +2)
+        # tip_P = tip_kappa*tip_P_ideal + 1/8 * self.wing.rho*self.tip_rotor.no_blades*self.tip_rotor.cord*self.tip_rotor.cd
+
+        # center_P_ideal = (center_v_i) / center_v_h * required_thrust * center_v_h
+        # center_kappa = (2*(self.center_rotor.no_blades+1)**(3/2)) / ((3*self.center_rotor.no_blades+2) +2)
+        # center_P = center_kappa*center_P_ideal + 1/8 * self.wing.rho*self.center_rotor.no_blades*self.center_rotor.cord*self.center_rotor.cd
+        
+        Power = center_power + tip_power
 
         if plot:
             plt.figure()
             plt.title("Power required")
-            plt.plot(self.speed, Power_center, label="Center rotor")
-            plt.plot(self.speed, Power_tip, label="Tip rotor")
+            plt.plot(self.speed, center_power, label="Center rotor")
+            plt.plot(self.speed, tip_power, label="Tip rotor")
+            plt.plot(self.speed, Power, label="Total power")
             plt.xlabel("Speed [m/s]")
             plt.ylabel("Power [W]")
             plt.legend()
             plt.grid()
 
-            # np.savetxt(f"Assignment3/Power_center{self.wing.AR}.txt", np.array([self.speed, Power_center]).T)
-            # np.savetxt(f"Assignment3/Power_tip{self.wing.AR}.txt", np.array([self.speed, Power_tip]).T)
+            np.savetxt(f"Assignment3/Power_center{self.wing.AR}.txt", np.array([self.speed, center_power]).T)
+            np.savetxt(f"Assignment3/Power_tip{self.wing.AR}.txt", np.array([self.speed, tip_power]).T)
+            np.savetxt(f"Assignment3/Power_total{self.wing.AR}.txt", np.array([self.speed, Power]).T)
 
 
     def fixed_aoa(self, alpha: float = -2, plot=False):
@@ -684,18 +798,19 @@ class Plane:
         '''
         # Initilize wing parameters
         self.wing.dimensions()
+        self.center_rotor.get_clalpha()
         # Create speed array
-        speed = np.linspace(0.01, 22, 100)
+        self.speed_arr()
 
         # Finds index closest to the fixed angle of attack
         index = np.argmin(np.abs(self.wing.alpha - alpha*np.pi/180))
 
         # Calculate the lift force
-        wing_lift = 0.5 * self.wing.rho * speed**2 * self.wing.S * self.wing.CL[index]
+        wing_lift = 0.5 * self.wing.rho * self.speed**2 * self.wing.S * self.wing.CL[index]
 
         # Calculate the drag force of the wing and body
-        wing_drag = 0.5 * self.wing.rho * speed**2 * self.wing.S * self.wing.CD[index]
-        body_drag = 0.5 * self.wing.rho * speed**2 * self.body_area * self.body_CD
+        wing_drag = 0.5 * self.wing.rho * self.speed**2 * self.wing.S * self.wing.CD[index]
+        body_drag = 0.5 * self.wing.rho * self.speed**2 * self.body_area * self.body_CD
         drag = wing_drag + body_drag
 
         # required thrust in x and y direction
@@ -703,28 +818,36 @@ class Plane:
         y_force = self.wing.min_lift - wing_lift
 
         # comined force
-        force = np.sqrt(x_force**2 + y_force**2)
+        force = (np.sqrt(x_force**2 + y_force**2))
 
         power = np.zeros(len(force))
-        v_i = np.ones(len(speed))
-        alpha = np.arctan(y_force/x_force)
-        for i, v_inf in enumerate(speed):
-            for n in range(10000):
-                v_h2 = force[i]/(2 * self.wing.rho * self.wing.S)
+        v_i = np.ones(len(self.speed))
+        alpha = np.arctan2(x_force,y_force)
+        for i, v_inf in enumerate(self.speed):
+            for n in range(10000000):
+                v_h2 = (force[i]/2)/(2 * self.wing.rho * self.center_rotor.area)
                 v_i_init = v_h2 / np.sqrt((v_inf * np.cos(alpha[i]))**2 + (v_inf * np.sin(alpha[i]) + v_i[i])**2)
-                if np.abs(v_i_init - v_i[i]) < 1e-6:
-                    power[i] = force[i] * (v_inf * np.sin(alpha[i]) + v_i[i])
+                if np.abs(v_i_init - v_i[i]) < 1e-4:
+                    power[i] = ((force[i]/2) * v_inf * np.sin(alpha[i]) + (force[i]/2) * v_i[i])*2
                     break
+                if n == 999999:
+                    raise ValueError("Did not converge")
                 v_i[i] = v_i_init
 
+        P_ideal = force * v_inf * np.sin(alpha) + force * v_i
+        P_0 = 1/8 * self.wing.rho*self.center_rotor.no_blades*self.center_rotor.omega**3*self.center_rotor.cord*self.center_rotor.cd*self.center_rotor.radius**4
+        kappa = (2*(self.center_rotor.no_blades+1)**(3/2)) / ((3*self.center_rotor.no_blades+2) +2)  
 
+        power = kappa*P_ideal
+
+        power = power*2
 
         if plot:
             plt.figure()
             plt.title("Forces at fixed angle of attack")
-            plt.plot(speed, x_force, label="X-force")
-            plt.plot(speed, y_force, label="Y-force")
-            plt.plot(speed, force, label="Combined force")
+            plt.plot(self.speed, x_force, label="X-force")
+            plt.plot(self.speed, y_force, label="Y-force")
+            plt.plot(self.speed, force, label="Combined force")
             plt.xlabel("Speed [m/s]")
             plt.ylabel("Force [N]")
             plt.legend()
@@ -732,7 +855,7 @@ class Plane:
 
             plt.figure()
             plt.title("Induced velocity")
-            plt.plot(speed, v_i, label="Induced velocity")
+            plt.plot(self.speed, v_i, label="Induced velocity")
             plt.xlabel("Speed [m/s]")
             plt.ylabel("Induced velocity [m/s]")
             plt.legend()
@@ -740,7 +863,7 @@ class Plane:
 
             plt.figure()
             plt.title("Prop angle")
-            plt.plot(speed, alpha * 180/np.pi, label="prop angle")
+            plt.plot(self.speed, alpha * 180/np.pi, label="prop angle")
             plt.xlabel("Speed [m/s]")
             plt.ylabel("Angle [deg]")
             plt.legend()
@@ -748,18 +871,18 @@ class Plane:
 
             plt.figure()
             plt.title("Power required")
-            plt.plot(speed[1:], power[1:], label="Power")
+            plt.plot(self.speed, power, label="Power")
             plt.xlabel("Speed [m/s]")
             plt.ylabel("Power [W]")
             plt.legend()
             plt.grid()
 
-            # np.savetxt(f"Assignment3/Xforces{wing.optimum_speed}.txt", np.array([speed, x_force]).T)
-            # np.savetxt(f"Assignment3/Yforces{wing.optimum_speed}.txt", np.array([speed, y_force]).T)
-            # np.savetxt(f"Assignment3/force{wing.optimum_speed}.txt", np.array([speed, force]).T)
+            np.savetxt(f"Assignment3/Xforces{self.wing.optimum_speed}.txt", np.array([self.speed, x_force]).T)
+            np.savetxt(f"Assignment3/Yforces{self.wing.optimum_speed}.txt", np.array([self.speed, y_force]).T)
+            np.savetxt(f"Assignment3/force{self.wing.optimum_speed}.txt", np.array([self.speed, force]).T)
 
-            np.savetxt(f"Assignment3/alpha{self.wing.optimum_speed}.txt", np.array([speed, alpha * 180/np.pi]).T)
-            np.savetxt(f"Assignment3/power{self.wing.optimum_speed}.txt", np.array([speed[1:], power[1:]]).T)
+            np.savetxt(f"Assignment3/alpha{self.wing.optimum_speed}.txt", np.array([self.speed, alpha * 180/np.pi]).T)
+            np.savetxt(f"Assignment3/power{self.wing.optimum_speed}.txt", np.array([self.speed, power]).T)
 
     def power(self):
         pass
@@ -768,6 +891,10 @@ if __name__ == "__main__":
     if False: # Test
         prop = Prop(radius=0.3, twist=2)
         print(prop.thrust_power(force=21, inflow=22))
+
+    if False: # Test
+        prop = Prop(radius=0.3, twist=0)
+        prop.general_BEMT(required_thrust=22, inflow=10)
 
     if False: # Test
         plane = Plane()
@@ -854,14 +981,15 @@ if __name__ == "__main__":
         plane.drag_force(plot=True)
         plane.lift_force(plot=True)
 
-        # plane.variable_aoa(plot=True)
+        plane.variable_aoa(plot=True)
         plt.show()
     
     if False: # Question 6
-        wing = Wing(optimum_speed=22)
+        wing = Wing(optimum_speed=16)
         wing.optimal_ClCd(plot=False)
+        wing.maxspeed_ClCd()
         plane = Plane(wing=wing)
-        plane.fixed_aoa(plot=True, alpha=wing.alpha_optimal * 180/np.pi)
-        # plane.fixed_aoa(plot=True, alpha=0)
+        plane.fixed_aoa(plot=True, alpha=wing.alpha_max*180/np.pi)
+        print(wing.alpha_max*180/np.pi)
 
         plt.show()
